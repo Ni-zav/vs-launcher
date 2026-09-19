@@ -45,6 +45,7 @@ final class LauncherSurface extends View {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
         void onHomeSlotLongPressed(int index);
+        void onAllAppsLongPressed(AppEntry app);
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
@@ -129,6 +130,7 @@ final class LauncherSurface extends View {
     private VelocityTracker velocityTracker;
 
     private int pressedHomeIndex = -1;
+    private int pressedAppIndex = -1;
     private boolean longPressTriggered;
 
     private ValueAnimator pageAnimator;
@@ -141,18 +143,26 @@ final class LauncherSurface extends View {
 
     private final Runnable longPressRunnable = new Runnable() {
         @Override public void run() {
-            if (pressedHomeIndex < 0
-                    || page != PAGE_HOME
-                    || gestureMode != GESTURE_NONE
-                    || transitionRunning) {
+            if (gestureMode != GESTURE_NONE || transitionRunning) return;
+
+            if (page == PAGE_HOME && pressedHomeIndex >= 0) {
+                longPressTriggered = true;
+                if (uiConfig.haptics) {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                }
+                host.onHomeSlotLongPressed(pressedHomeIndex);
                 return;
             }
 
-            longPressTriggered = true;
-            if (uiConfig.haptics) {
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            if (page == PAGE_APPS
+                    && pressedAppIndex >= 0
+                    && pressedAppIndex < filteredApps.size()) {
+                longPressTriggered = true;
+                if (uiConfig.haptics) {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                }
+                host.onAllAppsLongPressed(filteredApps.get(pressedAppIndex));
             }
-            host.onHomeSlotLongPressed(pressedHomeIndex);
         }
     };
 
@@ -757,7 +767,10 @@ final class LauncherSurface extends View {
                 pressedHomeIndex = page == PAGE_HOME
                         ? homeIndexAt(downX, downY)
                         : -1;
-                if (pressedHomeIndex >= 0) {
+                pressedAppIndex = page == PAGE_APPS
+                        ? allAppsIndexAt(downX, downY)
+                        : -1;
+                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0) {
                     postDelayed(longPressRunnable, longPressTimeout);
                 }
                 return true;
@@ -826,6 +839,7 @@ final class LauncherSurface extends View {
                 recycleVelocityTracker();
                 gestureMode = GESTURE_NONE;
                 pressedHomeIndex = -1;
+                pressedAppIndex = -1;
                 return true;
 
             default:
@@ -1000,6 +1014,15 @@ final class LauncherSurface extends View {
         }
     }
 
+    private int allAppsIndexAt(float x, float y) {
+        if (x < leftPx || x > rightPx) return -1;
+        if (y < appsViewportTopPx || y >= appsViewportBottomPx || rowHeightPx <= 0f) return -1;
+
+        float start = appsViewportTopPx - appScroll;
+        int index = (int) ((y - start) / rowHeightPx);
+        return index >= 0 && index < filteredApps.size() ? index : -1;
+    }
+
     private int homeIndexAt(float x, float y) {
         float start = homeListStartPx;
         float row = rowHeightPx;
@@ -1043,6 +1066,7 @@ final class LauncherSurface extends View {
     private void cancelPendingLongPress() {
         removeCallbacks(longPressRunnable);
         pressedHomeIndex = -1;
+        pressedAppIndex = -1;
     }
 
     private void recycleVelocityTracker() {
