@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-label="VS Launcher icon">
+  <rect width="108" height="108" fill="#000000"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 31 L39 77 L53 31"/>
+    <path d="M82 34 C76 28 62 29 59 38 C56 47 65 50 73 53 C82 57 85 64 81 72 C77 81 63 81 57 74"/>
+  </g>
+</svg>
