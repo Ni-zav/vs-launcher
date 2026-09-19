@@ -5,11 +5,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -19,6 +17,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -31,13 +31,20 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TimeZone;
@@ -49,14 +56,9 @@ import java.util.TimeZone;
  * App discovery and weather I/O remain on background executors.
  */
 public final class MainActivity extends Activity implements LauncherSurface.Host {
-    private static final String PREFS = "launcher_preferences";
-    private static final String HOME_MAX = "home_max";
-    private static final String HOME_SLOT_PREFIX = "home_slot_";
-    private static final String QUICK_APP = "quick_app";
-    private static final int DEFAULT_HOME_MAX = 5;
-    private static final int MIN_HOME_MAX = 1;
-    private static final int MAX_HOME_MAX = 8;
     private static final int REQUEST_COARSE_LOCATION = 41;
+    private static final int REQUEST_EXPORT_CONFIG = 52;
+    private static final int REQUEST_IMPORT_CONFIG = 53;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat dateFormat =
@@ -69,14 +71,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private EditText search;
     private AppRepository appRepository;
     private WeatherService weatherService;
+    private LauncherPreferences launcherPreferences;
+    private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
 
+    private List<AppEntry> allApps = Collections.emptyList();
     private List<AppEntry> apps = Collections.emptyList();
+    private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
+    private String latestWeatherText = "Tap for weather";
     private int bottomInset;
-    private int maxHomeApps = DEFAULT_HOME_MAX;
+    private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
 
     private final Runnable clockTick = new Runnable() {
@@ -106,10 +113,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
+        launcherPreferences = new LauncherPreferences(this);
+        uiConfig = LauncherUiConfig.from(launcherPreferences);
+
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
 
         surface = new LauncherSurface(this, this);
+        surface.setUiConfig(uiConfig);
         root.addView(surface, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -139,7 +150,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
-        weatherService = new WeatherService(this, text -> surface.setWeather(text));
+        weatherService = new WeatherService(this, text -> {
+            latestWeatherText = text;
+            surface.setWeather(formatWeather(text));
+        });
 
         updateClock();
         reloadApps();
@@ -208,55 +222,105 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         TimeZone zone = TimeZone.getDefault();
         dateFormat.setTimeZone(zone);
         timeFormat.setTimeZone(zone);
-        timeFormat.applyPattern(
-                android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm"
-        );
+
+        if (LauncherPreferences.CLOCK_24.equals(uiConfig.clockFormat)) {
+            timeFormat.applyPattern("HH:mm");
+        } else if (LauncherPreferences.CLOCK_12.equals(uiConfig.clockFormat)) {
+            timeFormat.applyPattern("h:mm");
+        } else {
+            timeFormat.applyPattern(
+                    android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm"
+            );
+        }
+
+        if (LauncherPreferences.DATE_NUMERIC.equals(uiConfig.dateStyle)) {
+            dateFormat.applyPattern("dd.MM.yyyy");
+        } else if (LauncherPreferences.DATE_SHORT.equals(uiConfig.dateStyle)) {
+            dateFormat.applyPattern("EEE · d MMM");
+        } else {
+            dateFormat.applyPattern("EEEE · d MMM");
+        }
 
         Date now = new Date();
         surface.setClock(dateFormat.format(now), timeFormat.format(now));
     }
 
+    private void applyUiConfiguration() {
+        uiConfig = LauncherUiConfig.from(launcherPreferences);
+        surface.setUiConfig(uiConfig);
+        surface.setWeather(formatWeather(latestWeatherText));
+        updateClock();
+    }
+
+    private String formatWeather(String text) {
+        if (text == null || text.isEmpty()) return "Weather";
+        int split = text.indexOf(" · ");
+        if (split <= 0) return text;
+
+        if (LauncherPreferences.WEATHER_TEMP.equals(uiConfig.weatherMode)) {
+            return text.substring(0, split);
+        }
+        if (LauncherPreferences.WEATHER_CONDITION.equals(uiConfig.weatherMode)) {
+            return text.substring(split + 3);
+        }
+        return text;
+    }
+
     private void reloadApps() {
         appRepository.load(loaded -> {
-            apps = loaded;
-            filteredApps = AppRepository.filter(apps, query);
-            surface.setApps(apps, filteredApps);
+            allApps = loaded;
+            HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
+            for (AppEntry app : loaded) {
+                index.put(app.component.flattenToString(), app);
+            }
+            appByComponent = Collections.unmodifiableMap(index);
+            refreshVisibleApps();
             resolveLauncherConfiguration();
         });
     }
 
+    private void refreshVisibleApps() {
+        Set<String> hidden = launcherPreferences.hiddenComponents();
+        ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
+        for (AppEntry app : allApps) {
+            if (!hidden.contains(app.component.flattenToString())) visible.add(app);
+        }
+        apps = Collections.unmodifiableList(visible);
+        filteredApps = AppRepository.filter(apps, query, launcherPreferences.aliases());
+        surface.setApps(apps, filteredApps);
+        surface.setHiddenAppCount(hidden.size());
+    }
+
     private void resolveLauncherConfiguration() {
-        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
-        maxHomeApps = clamp(
-                preferences.getInt(HOME_MAX, DEFAULT_HOME_MAX),
-                MIN_HOME_MAX,
-                MAX_HOME_MAX
-        );
+        maxHomeApps = launcherPreferences.homeMax();
 
         ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
+        ArrayList<String> labels = new ArrayList<>(maxHomeApps);
         Set<String> used = new HashSet<>();
-        SharedPreferences.Editor seedEditor = null;
 
         for (int index = 0; index < maxHomeApps; index++) {
-            String key = HOME_SLOT_PREFIX + index;
-            String componentName = preferences.getString(key, null);
+            String componentName = launcherPreferences.homeSlot(index);
             AppEntry entry = findApp(componentName);
 
-            if (componentName == null && !preferences.contains(key)) {
+            if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
                 entry = firstUnusedApp(used);
                 if (entry != null) {
-                    if (seedEditor == null) seedEditor = preferences.edit();
-                    seedEditor.putString(key, entry.component.flattenToString());
+                    launcherPreferences.setHomeSlot(index, entry.component.flattenToString());
                 }
             }
 
             resolved.add(entry);
-            if (entry != null) used.add(entry.component.flattenToString());
+            if (entry != null) {
+                String component = entry.component.flattenToString();
+                String alias = launcherPreferences.alias(component);
+                labels.add(alias.isEmpty() ? entry.label : alias);
+                used.add(component);
+            } else {
+                labels.add("");
+            }
         }
 
-        if (seedEditor != null) seedEditor.apply();
-
-        String quickComponent = preferences.getString(QUICK_APP, null);
+        String quickComponent = launcherPreferences.quickApp();
         quickApp = findApp(quickComponent);
         String quickLabel;
         if (quickApp != null) {
@@ -268,7 +332,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         homeApps = Collections.unmodifiableList(resolved);
-        surface.setHomeConfiguration(homeApps, maxHomeApps, quickLabel);
+        surface.setHomeConfiguration(
+                homeApps,
+                Collections.unmodifiableList(labels),
+                maxHomeApps,
+                quickLabel
+        );
+        surface.setHiddenAppCount(launcherPreferences.hiddenComponents().size());
     }
 
     private AppEntry firstUnusedApp(Set<String> used) {
@@ -281,13 +351,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry findApp(String flattenedComponent) {
         if (flattenedComponent == null || flattenedComponent.isEmpty()) return null;
-        ComponentName component = ComponentName.unflattenFromString(flattenedComponent);
-        if (component == null) return null;
-
-        for (AppEntry app : apps) {
-            if (component.equals(app.component)) return app;
-        }
-        return null;
+        return appByComponent.get(flattenedComponent);
     }
 
     private void registerPackageChanges() {
@@ -351,21 +415,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showPage(int target) {
-        if (surface.getPage() == target) return;
+        showPage(target, false);
+    }
+
+    private void showPage(int target, boolean focusSearch) {
+        if (surface.getPage() == target) {
+            if (target == LauncherSurface.PAGE_APPS && focusSearch) {
+                if (search == null) addSearch(true);
+                else focusSearchField();
+            }
+            return;
+        }
 
         removeSearch();
         surface.setPage(target);
 
         if (target == LauncherSurface.PAGE_APPS) {
+            long delay = uiConfig.pageDurationMs() == 0L
+                    ? 0L
+                    : uiConfig.pageDurationMs() + 20L;
             mainHandler.postDelayed(() -> {
                 if (surface.getPage() == LauncherSurface.PAGE_APPS && search == null) {
-                    addSearch();
+                    addSearch(focusSearch);
                 }
-            }, 185L);
+            }, delay);
         }
     }
 
-    private void addSearch() {
+    private void addSearch(boolean focus) {
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
@@ -390,7 +467,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                filteredApps = AppRepository.filter(apps, query);
+                filteredApps = AppRepository.filter(
+                        apps,
+                        query,
+                        launcherPreferences.aliases()
+                );
                 surface.setFilteredApps(filteredApps);
             }
 
@@ -399,6 +480,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         });
 
         root.addView(search, searchLayoutParams());
+        if (focus) focusSearchField();
+    }
+
+    private void focusSearchField() {
+        if (search == null) return;
         search.requestFocus();
         search.postDelayed(() -> {
             if (search == null || !search.hasFocus()) return;
@@ -472,22 +558,157 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onHomeSlotLongPressed(int index) {
         if (index < 0 || index >= maxHomeApps) return;
-        showHomeAppPicker(index);
+        showHomeSlotMenu(index);
+    }
+
+    @Override public void onAllAppsLongPressed(AppEntry app) {
+        if (app == null) return;
+        CharSequence[] actions = {"Add to Home", "Hide", "App info", "Uninstall"};
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle(app.label)
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            showAddToHomeSlotPicker(app);
+                            break;
+                        case 1:
+                            launcherPreferences.setHidden(app.component.flattenToString(), true);
+                            refreshVisibleApps();
+                            resolveLauncherConfiguration();
+                            break;
+                        case 2:
+                            openAppInfo(app);
+                            break;
+                        case 3:
+                            requestUninstall(app);
+                            break;
+                        default:
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     @Override public void onHomeMaxChanged(int requestedMax) {
-        int safeMax = clamp(requestedMax, MIN_HOME_MAX, MAX_HOME_MAX);
+        int safeMax = clamp(
+                requestedMax,
+                LauncherPreferences.MIN_HOME_APPS,
+                LauncherPreferences.MAX_HOME_APPS
+        );
         if (safeMax == maxHomeApps) return;
 
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putInt(HOME_MAX, safeMax)
-                .apply();
+        launcherPreferences.setHomeMax(safeMax);
         resolveLauncherConfiguration();
     }
 
     @Override public void onQuickAppPickerRequested() {
         showQuickAppPicker();
+    }
+
+    @Override public void onSettingAction(int action) {
+        switch (action) {
+            case LauncherSurface.ACTION_HOME_POSITION:
+                launcherPreferences.setHomePosition(next(
+                        uiConfig.homePosition,
+                        LauncherPreferences.POSITION_TOP,
+                        LauncherPreferences.POSITION_CENTER,
+                        LauncherPreferences.POSITION_BOTTOM
+                ));
+                break;
+            case LauncherSurface.ACTION_HOME_DENSITY:
+                launcherPreferences.setDensity(next(
+                        uiConfig.density,
+                        LauncherPreferences.DENSITY_COMPACT,
+                        LauncherPreferences.DENSITY_NORMAL,
+                        LauncherPreferences.DENSITY_SPACIOUS
+                ));
+                break;
+            case LauncherSurface.ACTION_HOME_TEXT:
+                launcherPreferences.setTextSize(next(
+                        uiConfig.textSize,
+                        LauncherPreferences.TEXT_SMALL,
+                        LauncherPreferences.TEXT_MEDIUM,
+                        LauncherPreferences.TEXT_LARGE
+                ));
+                break;
+            case LauncherSurface.ACTION_TOGGLE_TIME:
+                launcherPreferences.setShowTime(!uiConfig.showTime);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_DATE:
+                launcherPreferences.setShowDate(!uiConfig.showDate);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_WEATHER:
+                launcherPreferences.setShowWeather(!uiConfig.showWeather);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_BATTERY:
+                launcherPreferences.setShowBattery(!uiConfig.showBattery);
+                break;
+            case LauncherSurface.ACTION_STATUS_LAYOUT:
+                launcherPreferences.setStatusLayout(next(
+                        uiConfig.statusLayout,
+                        LauncherPreferences.STATUS_TIME_FIRST,
+                        LauncherPreferences.STATUS_DATE_FIRST,
+                        LauncherPreferences.STATUS_COMPACT
+                ));
+                break;
+            case LauncherSurface.ACTION_CLOCK_FORMAT:
+                launcherPreferences.setClockFormat(next(
+                        uiConfig.clockFormat,
+                        LauncherPreferences.CLOCK_SYSTEM,
+                        LauncherPreferences.CLOCK_24,
+                        LauncherPreferences.CLOCK_12
+                ));
+                break;
+            case LauncherSurface.ACTION_DATE_STYLE:
+                launcherPreferences.setDateStyle(next(
+                        uiConfig.dateStyle,
+                        LauncherPreferences.DATE_WEEKDAY,
+                        LauncherPreferences.DATE_SHORT,
+                        LauncherPreferences.DATE_NUMERIC
+                ));
+                break;
+            case LauncherSurface.ACTION_WEATHER_MODE:
+                launcherPreferences.setWeatherMode(next(
+                        uiConfig.weatherMode,
+                        LauncherPreferences.WEATHER_BOTH,
+                        LauncherPreferences.WEATHER_TEMP,
+                        LauncherPreferences.WEATHER_CONDITION
+                ));
+                break;
+            case LauncherSurface.ACTION_BATTERY_MODE:
+                launcherPreferences.setBatteryMode(next(
+                        uiConfig.batteryMode,
+                        LauncherPreferences.BATTERY_BOTH,
+                        LauncherPreferences.BATTERY_ICON,
+                        LauncherPreferences.BATTERY_PERCENT
+                ));
+                break;
+            case LauncherSurface.ACTION_ANIMATION:
+                launcherPreferences.setAnimationSpeed(next(
+                        uiConfig.animationSpeed,
+                        LauncherPreferences.ANIMATION_INSTANT,
+                        LauncherPreferences.ANIMATION_FAST,
+                        LauncherPreferences.ANIMATION_NORMAL
+                ));
+                break;
+            case LauncherSurface.ACTION_HAPTICS:
+                launcherPreferences.setHaptics(!uiConfig.haptics);
+                break;
+            case LauncherSurface.ACTION_HIDDEN_APPS:
+                showHiddenAppsManager();
+                return;
+            case LauncherSurface.ACTION_EXPORT_CONFIG:
+                exportConfiguration();
+                return;
+            case LauncherSurface.ACTION_IMPORT_CONFIG:
+                importConfiguration();
+                return;
+            default:
+                return;
+        }
+
+        applyUiConfiguration();
     }
 
     @Override public void onQuickLaunchRequested() {
@@ -498,50 +719,157 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
+    @Override public void onSearchGestureRequested() {
+        showPage(LauncherSurface.PAGE_APPS, true);
+    }
+
+    private void showHomeSlotMenu(int slot) {
+        ArrayList<String> actions = new ArrayList<>();
+        actions.add("Change app");
+
+        AppEntry current = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (current != null) actions.add("Rename");
+        if (slot > 0) actions.add("Move up");
+        if (slot + 1 < maxHomeApps) actions.add("Move down");
+        actions.add("Clear slot");
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Home slot " + (slot + 1))
+                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
+                    String action = actions.get(which);
+                    switch (action) {
+                        case "Change app":
+                            showHomeAppPicker(slot);
+                            break;
+                        case "Rename":
+                            showRenameDialog(slot);
+                            break;
+                        case "Move up":
+                            launcherPreferences.swapHomeSlots(slot, slot - 1);
+                            resolveLauncherConfiguration();
+                            break;
+                        case "Move down":
+                            launcherPreferences.swapHomeSlots(slot, slot + 1);
+                            resolveLauncherConfiguration();
+                            break;
+                        case "Clear slot":
+                            launcherPreferences.clearHomeSlot(slot);
+                            resolveLauncherConfiguration();
+                            break;
+                        default:
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void showHomeAppPicker(int slot) {
-        if (apps.isEmpty()) return;
+        if (allApps.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[apps.size()];
-        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
-                    AppEntry selected = apps.get(which);
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .putString(
-                                    HOME_SLOT_PREFIX + slot,
-                                    selected.component.flattenToString()
-                            )
-                            .apply();
+                    AppEntry selected = allApps.get(which);
+                    launcherPreferences.setHomeSlot(
+                            slot,
+                            selected.component.flattenToString()
+                    );
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
+    private void showRenameDialog(int slot) {
+        AppEntry app = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (app == null) return;
+
+        String component = app.component.flattenToString();
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(DesignTokens.WHITE);
+        input.setHintTextColor(DesignTokens.WHITE);
+        input.setBackgroundColor(DesignTokens.BLACK);
+        input.setHint(app.label);
+        String existing = launcherPreferences.alias(component);
+        if (!existing.isEmpty()) {
+            input.setText(existing);
+            input.setSelection(existing.length());
+        }
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Rename " + app.label)
+                .setView(input)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    launcherPreferences.setAlias(component, input.getText().toString());
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNeutralButton("Reset", (dialog, which) -> {
+                    launcherPreferences.setAlias(component, "");
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showAddToHomeSlotPicker(AppEntry app) {
+        CharSequence[] slots = new CharSequence[maxHomeApps];
+        for (int i = 0; i < maxHomeApps; i++) {
+            AppEntry existing = i < homeApps.size() ? homeApps.get(i) : null;
+            String name = existing == null ? "Empty" : existing.label;
+            slots[i] = (i + 1) + " · " + name;
+        }
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Add " + app.label)
+                .setItems(slots, (dialog, which) -> {
+                    launcherPreferences.setHomeSlot(
+                            which,
+                            app.component.flattenToString()
+                    );
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void openAppInfo(AppEntry app) {
+        Intent intent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + app.component.getPackageName())
+        );
+        startActivity(intent);
+    }
+
+    private void requestUninstall(AppEntry app) {
+        Intent intent = new Intent(
+                Intent.ACTION_DELETE,
+                Uri.parse("package:" + app.component.getPackageName())
+        );
+        startActivity(intent);
+    }
+
     private void showQuickAppPicker() {
-        if (apps.isEmpty()) return;
+        if (allApps.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[apps.size()];
-        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
-                    AppEntry selected = apps.get(which);
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .putString(QUICK_APP, selected.component.flattenToString())
-                            .apply();
+                    AppEntry selected = allApps.get(which);
+                    launcherPreferences.setQuickApp(selected.component.flattenToString());
                     resolveLauncherConfiguration();
                 })
                 .setNeutralButton("Clear", (picker, which) -> {
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .remove(QUICK_APP)
-                            .apply();
+                    launcherPreferences.setQuickApp(null);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
@@ -573,7 +901,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             return;
         }
 
-        surface.setWeather("Updating weather…");
+        latestWeatherText = "Updating weather…";
+        surface.setWeather(latestWeatherText);
         weatherService.refreshNow();
     }
 
@@ -586,10 +915,116 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (requestCode != REQUEST_COARSE_LOCATION) return;
 
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            surface.setWeather("Updating weather…");
+            latestWeatherText = "Updating weather…";
+            surface.setWeather(latestWeatherText);
             weatherService.refreshNow();
         } else {
-            surface.setWeather("Weather needs location");
+            latestWeatherText = "Weather needs location";
+            surface.setWeather(latestWeatherText);
+        }
+    }
+
+    private static String next(String current, String... values) {
+        if (values.length == 0) return current;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) return values[(i + 1) % values.length];
+        }
+        return values[0];
+    }
+
+    private void showHiddenAppsManager() {
+        if (allApps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        boolean[] checked = new boolean[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) {
+            AppEntry app = allApps.get(i);
+            labels[i] = app.label;
+            checked[i] = launcherPreferences.isHidden(app.component.flattenToString());
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Hidden apps")
+                .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
+                    AppEntry app = allApps.get(which);
+                    launcherPreferences.setHidden(
+                            app.component.flattenToString(),
+                            isChecked
+                    );
+                })
+                .setPositiveButton("Done", (picker, which) -> {
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", (picker, which) -> {
+                    // Choices apply immediately; rebuild state so the screen is always consistent.
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .create();
+        dialog.show();
+    }
+
+    private void exportConfiguration() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "vs-launcher-config.json");
+        startActivityForResult(intent, REQUEST_EXPORT_CONFIG);
+    }
+
+    private void importConfiguration() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json");
+        startActivityForResult(intent, REQUEST_IMPORT_CONFIG);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+
+        Uri uri = data.getData();
+        if (requestCode == REQUEST_EXPORT_CONFIG) {
+            writeConfiguration(uri);
+        } else if (requestCode == REQUEST_IMPORT_CONFIG) {
+            readConfiguration(uri);
+        }
+    }
+
+    private void writeConfiguration(Uri uri) {
+        try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+            if (output == null) throw new IllegalStateException("Unable to open destination");
+            output.write(launcherPreferences.exportJson().getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            Toast.makeText(this, "Configuration exported", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void readConfiguration(Uri uri) {
+        try (BufferedInputStream input = new BufferedInputStream(
+                getContentResolver().openInputStream(uri)
+        ); ByteArrayOutputStream output = new ByteArrayOutputStream(4096)) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > 256 * 1024) {
+                    throw new IllegalArgumentException("Configuration is too large");
+                }
+                output.write(buffer, 0, count);
+            }
+
+            launcherPreferences.importJson(
+                    new String(output.toByteArray(), StandardCharsets.UTF_8)
+            );
+            applyUiConfiguration();
+            refreshVisibleApps();
+            resolveLauncherConfiguration();
+            Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show();
         }
     }
 

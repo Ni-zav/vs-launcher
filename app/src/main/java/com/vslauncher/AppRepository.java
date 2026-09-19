@@ -11,8 +11,11 @@ import android.os.Looper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -67,15 +70,62 @@ final class AppRepository {
         });
     }
 
-    static List<AppEntry> filter(List<AppEntry> source, String query) {
+    static List<AppEntry> filter(
+            List<AppEntry> source,
+            String query,
+            Map<String, String> aliases
+    ) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return source;
 
         ArrayList<AppEntry> matches = new ArrayList<>();
-        for (AppEntry app : source) {
-            if (app.normalizedLabel.contains(normalized)) matches.add(app);
-        }
+        Set<String> added = new HashSet<>();
+
+        addMatches(source, aliases, normalized, matches, added, 0);
+        addMatches(source, aliases, normalized, matches, added, 1);
+        addMatches(source, aliases, normalized, matches, added, 2);
+        addMatches(source, aliases, normalized, matches, added, 3);
         return matches;
+    }
+
+    private static void addMatches(
+            List<AppEntry> source,
+            Map<String, String> aliases,
+            String query,
+            ArrayList<AppEntry> out,
+            Set<String> added,
+            int tier
+    ) {
+        for (AppEntry app : source) {
+            String component = app.component.flattenToString();
+            if (added.contains(component)) continue;
+
+            String alias = aliases == null ? null : aliases.get(component);
+            String normalizedAlias = alias == null
+                    ? ""
+                    : alias.trim().toLowerCase(Locale.ROOT);
+
+            boolean match;
+            switch (tier) {
+                case 0:
+                    match = app.normalizedLabel.startsWith(query);
+                    break;
+                case 1:
+                    match = normalizedAlias.startsWith(query);
+                    break;
+                case 2:
+                    match = app.normalizedLabel.contains(query);
+                    break;
+                default:
+                    match = normalizedAlias.contains(query);
+                    break;
+            }
+
+            if (match) {
+                out.add(app);
+                added.add(component);
+            }
+        }
     }
 
     void close() {

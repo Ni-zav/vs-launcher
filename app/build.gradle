@@ -10,8 +10,8 @@ android {
         applicationId 'com.vslauncher'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.3.0'
+        versionCode 4
+        versionName '0.4.0'
     }
 
     compileOptions {
@@ -19,7 +19,36 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        benchmark {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            debuggable false
+        }
+
+        baselineProfile {
+            initWith release
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+            matchingFallbacks = ['release']
+            debuggable false
+        }
+    }
+
     buildFeatures {
         buildConfig false
     }
+}
+
+dependencies {
+    benchmarkImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
+    baselineProfileImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
 }

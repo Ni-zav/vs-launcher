@@ -6,19 +6,22 @@ import android.graphics.Typeface;
 /**
  * Central visual system for VS Launcher.
  *
- * Pure black, white-alpha hierarchy, system fonts only.
+ * The production UI is deliberately binary: #000000 and #FFFFFF only.
+ * Hierarchy comes from typography, spacing, geometry, and inversion rather
+ * than alpha/gray tones.
  */
 final class DesignTokens {
     private DesignTokens() {}
 
     static final int BLACK = Color.BLACK;
+    static final int WHITE = Color.WHITE;
 
-    static final int TEXT_PRIMARY = Color.argb(245, 255, 255, 255);
-    static final int TEXT_SECONDARY = Color.argb(184, 255, 255, 255);
-    static final int TEXT_TERTIARY = Color.argb(117, 255, 255, 255);
-    static final int DIVIDER = Color.argb(36, 255, 255, 255);
-    static final int SURFACE = Color.argb(22, 255, 255, 255);
-    static final int FOCUS = Color.argb(225, 255, 255, 255);
+    static final int TEXT_PRIMARY = WHITE;
+    static final int TEXT_SECONDARY = WHITE;
+    static final int TEXT_TERTIARY = WHITE;
+    static final int DIVIDER = WHITE;
+    static final int SURFACE = BLACK;
+    static final int FOCUS = WHITE;
 
     static final Typeface DISPLAY = Typeface.create("sans-serif-light", Typeface.NORMAL);
     static final Typeface BODY = Typeface.create("sans-serif", Typeface.NORMAL);
