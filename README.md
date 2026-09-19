@@ -105,6 +105,8 @@ The UI thread should be almost idle while Home is not moving.
 
 Actual FPS depends on the device, display refresh rate, compositor, and thermal state. The repository includes a separate Macrobenchmark module for physical-device startup/frame measurements; see **[docs/BENCHMARK.md](docs/BENCHMARK.md)**.
 
+For Nigel's Android 15+ Infinix, local Codex/ADB testing and Baseline Profile capture/A-B measurement are specified in **[docs/INFINIX_DEVICE_TEST.md](docs/INFINIX_DEVICE_TEST.md)**.
+
 ## Android 15+
 
 The launcher keeps edge-to-edge/fullscreen setup compatible with the Android 15+ startup path used by the current project: the content view is installed first, then status-bar hiding/system-UI behavior is applied.
