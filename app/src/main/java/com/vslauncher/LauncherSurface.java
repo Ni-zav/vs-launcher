@@ -69,6 +69,8 @@ final class LauncherSurface extends View {
     private String weatherText = "Weather · tap to enable";
     private String batteryText = "—";
     private String quickAppLabel = "Not set";
+    private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
+    private float dateTextWidth;
 
     private int batteryLevel = -1;
     private boolean charging;
@@ -121,7 +123,9 @@ final class LauncherSurface extends View {
             }
 
             longPressTriggered = true;
-            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            if (uiConfig.haptics) {
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            }
             host.onHomeSlotLongPressed(pressedHomeIndex);
         }
     };
@@ -176,9 +180,17 @@ final class LauncherSurface extends View {
         invalidate();
     }
 
+    void setUiConfig(LauncherUiConfig config) {
+        uiConfig = config == null ? LauncherUiConfig.defaults() : config;
+        appPaint.setTextSize(sp(uiConfig.appTextSp()));
+        recalculateGeometry();
+        invalidate();
+    }
+
     void setClock(String date, String time) {
         dateText = date;
         timeText = time;
+        dateTextWidth = datePaint.measureText(dateText);
         invalidateHome();
     }
 
@@ -247,7 +259,14 @@ final class LauncherSurface extends View {
 
         float distance = Math.abs(transitionOldEnd - transitionOldOffset);
         float fraction = getWidth() <= 0 ? 1f : Math.min(1f, distance / getWidth());
-        long duration = Math.max(90L, Math.round(180L * fraction));
+        long baseDuration = uiConfig.pageDurationMs();
+        if (baseDuration == 0L) {
+            transitionRunning = false;
+            transitionOldOffset = 0f;
+            invalidate();
+            return;
+        }
+        long duration = Math.max(60L, Math.round(baseDuration * fraction));
 
         transitionRunning = true;
         pageAnimator = ValueAnimator.ofFloat(0f, 1f);
@@ -333,15 +352,29 @@ final class LauncherSurface extends View {
     private void recalculateGeometry() {
         leftPx = dp(DesignTokens.PAGE_HORIZONTAL_DP);
         rightPx = Math.max(leftPx, getWidth() - leftPx);
-        rowHeightPx = dp(DesignTokens.ROW_HEIGHT_DP);
+        rowHeightPx = dp(uiConfig.rowHeightDp());
         contentTopPx = topInset + dp(28f);
-        homeListStartPx = contentTopPx + dp(174f);
         settingsMaxRowTopPx = contentTopPx + dp(72f);
         settingsQuickRowTopPx = contentTopPx + dp(198f);
         appsViewportTopPx = contentTopPx + dp(48f);
         appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
 
-        float homeAvailable = getHeight() - bottomInset - dp(20f) - homeListStartPx;
+        float defaultHomeStart = contentTopPx + dp(174f);
+        float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
+        float available = Math.max(0f, homeEnd - defaultHomeStart);
+        float requestedHeight = maxHomeApps * rowHeightPx;
+
+        if (requestedHeight < available
+                && LauncherPreferences.POSITION_CENTER.equals(uiConfig.homePosition)) {
+            homeListStartPx = defaultHomeStart + (available - requestedHeight) / 2f;
+        } else if (requestedHeight < available
+                && LauncherPreferences.POSITION_BOTTOM.equals(uiConfig.homePosition)) {
+            homeListStartPx = homeEnd - requestedHeight;
+        } else {
+            homeListStartPx = defaultHomeStart;
+        }
+
+        float homeAvailable = homeEnd - homeListStartPx;
         int fit = rowHeightPx <= 0f ? 0 : Math.max(0, (int) Math.floor(homeAvailable / rowHeightPx));
         visibleHomeRowsCache = Math.min(maxHomeApps, fit);
     }
@@ -359,21 +392,43 @@ final class LauncherSurface extends View {
         float right = rightPx;
         float top = contentTop();
 
-        canvas.drawText(timeText, x, top + dp(58f), timePaint);
-        canvas.drawText(dateText, x, top + dp(88f), datePaint);
+        if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate) canvas.drawText(dateText, x, top + dp(22f), datePaint);
+            if (uiConfig.showTime) canvas.drawText(timeText, x, top + dp(82f), timePaint);
+        } else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showTime) canvas.drawText(timeText, x, top + dp(58f), timePaint);
+            if (uiConfig.showDate) {
+                canvas.drawText(dateText, right - dateTextWidth, top + dp(22f), datePaint);
+            }
+        } else {
+            if (uiConfig.showTime) canvas.drawText(timeText, x, top + dp(58f), timePaint);
+            if (uiConfig.showDate) canvas.drawText(dateText, x, top + dp(88f), datePaint);
+        }
 
         float statusBaseline = top + dp(126f);
-        float weatherCenterX = x + dp(5f);
-        float weatherCenterY = statusBaseline - dp(4f);
 
-        canvas.drawCircle(weatherCenterX, weatherCenterY, dp(4.5f), statusStrokePaint);
-        canvas.drawCircle(weatherCenterX, weatherCenterY, dp(1.5f), primaryFillPaint);
-        canvas.drawText(weatherText, x + dp(18f), statusBaseline, metaPaint);
+        if (uiConfig.showWeather) {
+            float weatherCenterX = x + dp(5f);
+            float weatherCenterY = statusBaseline - dp(4f);
+            canvas.drawCircle(weatherCenterX, weatherCenterY, dp(4.5f), statusStrokePaint);
+            canvas.drawCircle(weatherCenterX, weatherCenterY, dp(1.5f), primaryFillPaint);
+            canvas.drawText(weatherText, x + dp(18f), statusBaseline, metaPaint);
+        }
 
-        float batteryTextX = right - batteryTextWidth;
-        float batteryX = batteryTextX - dp(34f);
-        drawBattery(canvas, batteryX, statusBaseline - dp(11f));
-        canvas.drawText(batteryText, batteryTextX, statusBaseline, metaPaint);
+        if (uiConfig.showBattery) {
+            boolean icon = !LauncherPreferences.BATTERY_PERCENT.equals(uiConfig.batteryMode);
+            boolean percent = !LauncherPreferences.BATTERY_ICON.equals(uiConfig.batteryMode);
+
+            if (icon && percent) {
+                float batteryTextX = right - batteryTextWidth;
+                drawBattery(canvas, batteryTextX - dp(34f), statusBaseline - dp(11f));
+                canvas.drawText(batteryText, batteryTextX, statusBaseline, metaPaint);
+            } else if (icon) {
+                drawBattery(canvas, right - dp(28f), statusBaseline - dp(11f));
+            } else {
+                canvas.drawText(batteryText, right - batteryTextWidth, statusBaseline, metaPaint);
+            }
+        }
 
         float dividerY = top + dp(153f);
         canvas.drawRect(x, dividerY, right, dividerY + dp(1f), dividerPaint);
@@ -387,7 +442,7 @@ final class LauncherSurface extends View {
         float x = left();
         float right = getWidth() - x;
         float rowHeight = rowHeightPx;
-        float baselineOffset = dp(31f);
+        float baselineOffset = rowHeight * 0.62f;
 
         for (int index = 0; index < count; index++) {
             float rowTop = startY + index * rowHeight;
@@ -674,9 +729,16 @@ final class LauncherSurface extends View {
         if (dragOffsetX == 0f) return;
         if (settleAnimator != null) settleAnimator.cancel();
 
+        long duration = uiConfig.settleDurationMs();
+        if (duration == 0L) {
+            dragOffsetX = 0f;
+            invalidate();
+            return;
+        }
+
         float start = dragOffsetX;
         settleAnimator = ValueAnimator.ofFloat(start, 0f);
-        settleAnimator.setDuration(120L);
+        settleAnimator.setDuration(duration);
         settleAnimator.setInterpolator(new DecelerateInterpolator());
         settleAnimator.addUpdateListener(animation -> {
             dragOffsetX = (float) animation.getAnimatedValue();
