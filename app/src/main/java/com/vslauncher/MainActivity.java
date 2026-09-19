@@ -106,8 +106,6 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
-        applyMinimalSystemUi();
-
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
 
@@ -137,6 +135,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         });
 
         setContentView(root);
+        applyMinimalSystemUi();
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
