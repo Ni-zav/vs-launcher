@@ -84,6 +84,7 @@ final class LauncherSurface extends View {
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
+    private List<String> homeLabels = Collections.emptyList();
 
     private String dateText = "";
     private String timeText = "";
@@ -251,8 +252,14 @@ final class LauncherSurface extends View {
         if (page == PAGE_SETTINGS) invalidate();
     }
 
-    void setHomeConfiguration(List<AppEntry> home, int max, String quickLabel) {
+    void setHomeConfiguration(
+            List<AppEntry> home,
+            List<String> labels,
+            int max,
+            String quickLabel
+    ) {
         homeApps = home == null ? Collections.emptyList() : home;
+        homeLabels = labels == null ? Collections.emptyList() : labels;
         maxHomeApps = Math.max(1, Math.min(8, max));
         quickAppLabel = quickLabel == null ? "Not set" : quickLabel;
         homeCountText = Integer.toString(maxHomeApps);
@@ -481,7 +488,8 @@ final class LauncherSurface extends View {
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
 
             if (app != null) {
-                canvas.drawText(app.label, x, rowTop + baselineOffset, appPaint);
+                String label = index < homeLabels.size() ? homeLabels.get(index) : app.label;
+                canvas.drawText(label, x, rowTop + baselineOffset, appPaint);
             } else {
                 canvas.drawText("Hold to choose app", x, rowTop + baselineOffset, metaPaint);
             }
