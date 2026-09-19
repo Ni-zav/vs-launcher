@@ -408,21 +408,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showPage(int target) {
-        if (surface.getPage() == target) return;
+        showPage(target, false);
+    }
+
+    private void showPage(int target, boolean focusSearch) {
+        if (surface.getPage() == target) {
+            if (target == LauncherSurface.PAGE_APPS && focusSearch) {
+                if (search == null) addSearch(true);
+                else focusSearchField();
+            }
+            return;
+        }
 
         removeSearch();
         surface.setPage(target);
 
         if (target == LauncherSurface.PAGE_APPS) {
+            long delay = uiConfig.pageDurationMs() == 0L
+                    ? 0L
+                    : uiConfig.pageDurationMs() + 20L;
             mainHandler.postDelayed(() -> {
                 if (surface.getPage() == LauncherSurface.PAGE_APPS && search == null) {
-                    addSearch();
+                    addSearch(focusSearch);
                 }
-            }, 185L);
+            }, delay);
         }
     }
 
-    private void addSearch() {
+    private void addSearch(boolean focus) {
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
@@ -460,6 +473,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         });
 
         root.addView(search, searchLayoutParams());
+        if (focus) focusSearchField();
+    }
+
+    private void focusSearchField() {
+        if (search == null) return;
         search.requestFocus();
         search.postDelayed(() -> {
             if (search == null || !search.hasFocus()) return;
@@ -692,6 +710,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         } else {
             showPage(LauncherSurface.PAGE_SETTINGS);
         }
+    }
+
+    @Override public void onSearchRequested() {
+        showPage(LauncherSurface.PAGE_APPS, true);
     }
 
     private void showHomeSlotMenu(int slot) {
