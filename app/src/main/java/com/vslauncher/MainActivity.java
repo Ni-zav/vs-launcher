@@ -8,7 +8,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -50,13 +49,6 @@ import java.util.TimeZone;
  * App discovery and weather I/O remain on background executors.
  */
 public final class MainActivity extends Activity implements LauncherSurface.Host {
-    private static final String PREFS = "launcher_preferences";
-    private static final String HOME_MAX = "home_max";
-    private static final String HOME_SLOT_PREFIX = "home_slot_";
-    private static final String QUICK_APP = "quick_app";
-    private static final int DEFAULT_HOME_MAX = 5;
-    private static final int MIN_HOME_MAX = 1;
-    private static final int MAX_HOME_MAX = 8;
     private static final int REQUEST_COARSE_LOCATION = 41;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -70,6 +62,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private EditText search;
     private AppRepository appRepository;
     private WeatherService weatherService;
+    private LauncherPreferences launcherPreferences;
 
     private List<AppEntry> apps = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
@@ -78,7 +71,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private AppEntry quickApp;
     private String query = "";
     private int bottomInset;
-    private int maxHomeApps = DEFAULT_HOME_MAX;
+    private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
 
     private final Runnable clockTick = new Runnable() {
@@ -108,6 +101,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
+        launcherPreferences = new LauncherPreferences(this);
+
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
 
@@ -233,27 +228,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void resolveLauncherConfiguration() {
-        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
-        maxHomeApps = clamp(
-                preferences.getInt(HOME_MAX, DEFAULT_HOME_MAX),
-                MIN_HOME_MAX,
-                MAX_HOME_MAX
-        );
+        maxHomeApps = launcherPreferences.homeMax();
 
         ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
         Set<String> used = new HashSet<>();
-        SharedPreferences.Editor seedEditor = null;
 
         for (int index = 0; index < maxHomeApps; index++) {
-            String key = HOME_SLOT_PREFIX + index;
-            String componentName = preferences.getString(key, null);
+            String componentName = launcherPreferences.homeSlot(index);
             AppEntry entry = findApp(componentName);
 
-            if (componentName == null && !preferences.contains(key)) {
+            if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
                 entry = firstUnusedApp(used);
                 if (entry != null) {
-                    if (seedEditor == null) seedEditor = preferences.edit();
-                    seedEditor.putString(key, entry.component.flattenToString());
+                    launcherPreferences.setHomeSlot(index, entry.component.flattenToString());
                 }
             }
 
@@ -261,9 +248,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (entry != null) used.add(entry.component.flattenToString());
         }
 
-        if (seedEditor != null) seedEditor.apply();
-
-        String quickComponent = preferences.getString(QUICK_APP, null);
+        String quickComponent = launcherPreferences.quickApp();
         quickApp = findApp(quickComponent);
         String quickLabel;
         if (quickApp != null) {
@@ -477,13 +462,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onHomeMaxChanged(int requestedMax) {
-        int safeMax = clamp(requestedMax, MIN_HOME_MAX, MAX_HOME_MAX);
+        int safeMax = clamp(
+                requestedMax,
+                LauncherPreferences.MIN_HOME_APPS,
+                LauncherPreferences.MAX_HOME_APPS
+        );
         if (safeMax == maxHomeApps) return;
 
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putInt(HOME_MAX, safeMax)
-                .apply();
+        launcherPreferences.setHomeMax(safeMax);
         resolveLauncherConfiguration();
     }
 
@@ -509,13 +495,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
                     AppEntry selected = apps.get(which);
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .putString(
-                                    HOME_SLOT_PREFIX + slot,
-                                    selected.component.flattenToString()
-                            )
-                            .apply();
+                    launcherPreferences.setHomeSlot(
+                            slot,
+                            selected.component.flattenToString()
+                    );
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
@@ -532,17 +515,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
                     AppEntry selected = apps.get(which);
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .putString(QUICK_APP, selected.component.flattenToString())
-                            .apply();
+                    launcherPreferences.setQuickApp(selected.component.flattenToString());
                     resolveLauncherConfiguration();
                 })
                 .setNeutralButton("Clear", (picker, which) -> {
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                            .edit()
-                            .remove(QUICK_APP)
-                            .apply();
+                    launcherPreferences.setQuickApp(null);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
