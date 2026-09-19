@@ -77,6 +77,21 @@ final class LauncherSurface extends View {
     private int topInset;
     private int bottomInset;
 
+    // Recomputed only when size/insets/configuration change.
+    private float contentTopPx;
+    private float leftPx;
+    private float rightPx;
+    private float rowHeightPx;
+    private float homeListStartPx;
+    private float settingsMaxRowTopPx;
+    private float settingsQuickRowTopPx;
+    private float appsViewportTopPx;
+    private float appsViewportBottomPx;
+    private int visibleHomeRowsCache;
+    private float batteryTextWidth;
+    private String homeCountText = "5";
+    private float homeCountWidth;
+
     private float appScroll;
     private float downX;
     private float downY;
@@ -156,6 +171,7 @@ final class LauncherSurface extends View {
         if (topInset == top && bottomInset == bottom) return;
         topInset = top;
         bottomInset = bottom;
+        recalculateGeometry();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         invalidate();
     }
@@ -170,6 +186,7 @@ final class LauncherSurface extends View {
         batteryLevel = level;
         charging = isCharging;
         batteryText = level < 0 ? "—" : level + "%";
+        batteryTextWidth = metaPaint.measureText(batteryText);
         invalidateHome();
     }
 
@@ -196,6 +213,9 @@ final class LauncherSurface extends View {
         homeApps = home == null ? Collections.emptyList() : home;
         maxHomeApps = Math.max(1, Math.min(8, max));
         quickAppLabel = quickLabel == null ? "Not set" : quickLabel;
+        homeCountText = Integer.toString(maxHomeApps);
+        homeCountWidth = titlePaint.measureText(homeCountText);
+        recalculateGeometry();
         invalidate();
     }
 
@@ -304,17 +324,39 @@ final class LauncherSurface extends View {
         canvas.restoreToCount(save);
     }
 
+    @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        recalculateGeometry();
+        appScroll = clamp(appScroll, 0f, maxAppScroll());
+    }
+
+    private void recalculateGeometry() {
+        leftPx = dp(DesignTokens.PAGE_HORIZONTAL_DP);
+        rightPx = Math.max(leftPx, getWidth() - leftPx);
+        rowHeightPx = dp(DesignTokens.ROW_HEIGHT_DP);
+        contentTopPx = topInset + dp(28f);
+        homeListStartPx = contentTopPx + dp(174f);
+        settingsMaxRowTopPx = contentTopPx + dp(72f);
+        settingsQuickRowTopPx = contentTopPx + dp(198f);
+        appsViewportTopPx = contentTopPx + dp(48f);
+        appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
+
+        float homeAvailable = getHeight() - bottomInset - dp(20f) - homeListStartPx;
+        int fit = rowHeightPx <= 0f ? 0 : Math.max(0, (int) Math.floor(homeAvailable / rowHeightPx));
+        visibleHomeRowsCache = Math.min(maxHomeApps, fit);
+    }
+
     private float contentTop() {
-        return topInset + dp(28f);
+        return contentTopPx;
     }
 
     private float left() {
-        return dp(DesignTokens.PAGE_HORIZONTAL_DP);
+        return leftPx;
     }
 
     private void drawHome(Canvas canvas) {
         float x = left();
-        float right = getWidth() - x;
+        float right = rightPx;
         float top = contentTop();
 
         canvas.drawText(timeText, x, top + dp(58f), timePaint);
@@ -328,7 +370,6 @@ final class LauncherSurface extends View {
         canvas.drawCircle(weatherCenterX, weatherCenterY, dp(1.5f), primaryFillPaint);
         canvas.drawText(weatherText, x + dp(18f), statusBaseline, metaPaint);
 
-        float batteryTextWidth = metaPaint.measureText(batteryText);
         float batteryTextX = right - batteryTextWidth;
         float batteryX = batteryTextX - dp(34f);
         drawBattery(canvas, batteryX, statusBaseline - dp(11f));
@@ -337,7 +378,7 @@ final class LauncherSurface extends View {
         float dividerY = top + dp(153f);
         canvas.drawRect(x, dividerY, right, dividerY + dp(1f), dividerPaint);
 
-        drawHomeRows(canvas, homeListStart(), visibleHomeRows());
+        drawHomeRows(canvas, homeListStartPx, visibleHomeRowsCache);
     }
 
     private void drawHomeRows(Canvas canvas, float startY, int count) {
@@ -345,7 +386,7 @@ final class LauncherSurface extends View {
 
         float x = left();
         float right = getWidth() - x;
-        float rowHeight = dp(DesignTokens.ROW_HEIGHT_DP);
+        float rowHeight = rowHeightPx;
         float baselineOffset = dp(31f);
 
         for (int index = 0; index < count; index++) {
@@ -444,7 +485,7 @@ final class LauncherSurface extends View {
             float clipTop,
             float clipBottom
     ) {
-        float row = dp(DesignTokens.ROW_HEIGHT_DP);
+        float row = rowHeightPx;
         int first = Math.max(0, (int) Math.floor((clipTop - startY) / row));
         int last = Math.min(count, (int) Math.ceil((clipBottom - startY) / row) + 1);
         if (last <= first) return;
@@ -469,7 +510,7 @@ final class LauncherSurface extends View {
 
     private void drawSettings(Canvas canvas) {
         float x = left();
-        float right = getWidth() - x;
+        float right = rightPx;
         float top = contentTop();
 
         canvas.drawText("SETTINGS", x, top + sp(DesignTokens.LABEL_SP), labelPaint);
@@ -492,8 +533,7 @@ final class LauncherSurface extends View {
         float baseline = y + dp(34f);
 
         canvas.drawText("−", minusX - appPaint.measureText("−") / 2f, baseline, appPaint);
-        String count = Integer.toString(maxHomeApps);
-        canvas.drawText(count, countX - appPaint.measureText(count) / 2f, baseline, titlePaint);
+        canvas.drawText(homeCountText, countX - homeCountWidth / 2f, baseline, titlePaint);
         canvas.drawText("+", plusX - appPaint.measureText("+") / 2f, baseline, appPaint);
 
         canvas.drawRect(x, y + height - dp(1f), right, y + height, dividerPaint);
@@ -743,11 +783,11 @@ final class LauncherSurface extends View {
     }
 
     private int homeIndexAt(float x, float y) {
-        float start = homeListStart();
-        float row = dp(DesignTokens.ROW_HEIGHT_DP);
-        int visible = visibleHomeRows();
+        float start = homeListStartPx;
+        float row = rowHeightPx;
+        int visible = visibleHomeRowsCache;
 
-        if (x < left() || x > getWidth() - left()) return -1;
+        if (x < leftPx || x > rightPx) return -1;
         if (y < start || y >= start + visible * row) return -1;
 
         int index = (int) ((y - start) / row);
@@ -755,28 +795,24 @@ final class LauncherSurface extends View {
     }
 
     private float homeListStart() {
-        return contentTop() + dp(174f);
+        return homeListStartPx;
     }
 
     private int visibleHomeRows() {
-        float available = getHeight() - bottomInset - dp(20f) - homeListStart();
-        int fit = Math.max(0, (int) Math.floor(available / dp(DesignTokens.ROW_HEIGHT_DP)));
-        return Math.min(maxHomeApps, fit);
+        return visibleHomeRowsCache;
     }
 
     private float settingsMaxRowTop() {
-        return contentTop() + dp(72f);
+        return settingsMaxRowTopPx;
     }
 
     private float settingsQuickRowTop() {
-        return contentTop() + dp(198f);
+        return settingsQuickRowTopPx;
     }
 
     private float maxAppScroll() {
-        float viewportTop = contentTop() + dp(48f);
-        float viewportBottom = getHeight() - bottomInset - dp(96f);
-        float viewport = Math.max(0f, viewportBottom - viewportTop);
-        float content = filteredApps.size() * dp(DesignTokens.ROW_HEIGHT_DP);
+        float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
+        float content = filteredApps.size() * rowHeightPx;
         return Math.max(0f, content - viewport);
     }
 
