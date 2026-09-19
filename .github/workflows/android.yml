@@ -1,6 +1,7 @@
 name: Android CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -33,4 +34,12 @@ jobs:
           gradle-version: "8.7"
 
       - name: Build and lint
-        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+        run: bash scripts/build-debug-apk.sh
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vs-launcher-debug-apk
+          path: dist/VS-Launcher-*-debug.apk
+          if-no-files-found: error
+          retention-days: 14
