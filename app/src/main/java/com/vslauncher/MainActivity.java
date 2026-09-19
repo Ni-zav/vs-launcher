@@ -719,7 +719,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
-    @Override public void onSearchRequested() {
+    @Override public void onSearchGestureRequested() {
         showPage(LauncherSurface.PAGE_APPS, true);
     }
 
