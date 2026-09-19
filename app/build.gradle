@@ -32,6 +32,15 @@ android {
             matchingFallbacks = ['release']
             debuggable false
         }
+
+        baselineProfile {
+            initWith release
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+            matchingFallbacks = ['release']
+            debuggable false
+        }
     }
 
     buildFeatures {
@@ -41,4 +50,5 @@ android {
 
 dependencies {
     benchmarkImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
+    baselineProfileImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
 }
