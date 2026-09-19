@@ -463,6 +463,7 @@ final class LauncherSurface extends View {
                 } else if (gestureMode == GESTURE_VERTICAL) {
                     finishVerticalGesture(event, velocityY);
                 } else {
+                    performClick();
                     handleTap(event.getX(), event.getY());
                 }
 
@@ -473,6 +474,11 @@ final class LauncherSurface extends View {
             default:
                 return true;
         }
+    }
+
+    @Override public boolean performClick() {
+        super.performClick();
+        return true;
     }
 
     private void finishHorizontalGesture(float velocityX) {
