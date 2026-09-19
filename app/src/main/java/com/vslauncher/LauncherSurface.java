@@ -21,6 +21,26 @@ final class LauncherSurface extends View {
     static final int PAGE_HOME = 0;
     static final int PAGE_APPS = 1;
 
+    static final int ACTION_HOME_POSITION = 1;
+    static final int ACTION_HOME_DENSITY = 2;
+    static final int ACTION_HOME_TEXT = 3;
+    static final int ACTION_TOGGLE_TIME = 4;
+    static final int ACTION_TOGGLE_DATE = 5;
+    static final int ACTION_TOGGLE_WEATHER = 6;
+    static final int ACTION_TOGGLE_BATTERY = 7;
+    static final int ACTION_STATUS_LAYOUT = 8;
+    static final int ACTION_CLOCK_FORMAT = 9;
+    static final int ACTION_DATE_STYLE = 10;
+    static final int ACTION_WEATHER_MODE = 11;
+    static final int ACTION_BATTERY_MODE = 12;
+    static final int ACTION_ANIMATION = 13;
+    static final int ACTION_HAPTICS = 14;
+    static final int ACTION_HIDDEN_APPS = 15;
+    static final int ACTION_EXPORT_CONFIG = 16;
+    static final int ACTION_IMPORT_CONFIG = 17;
+
+    private static final int SETTINGS_ROW_COUNT = 19;
+
     interface Host {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
@@ -28,6 +48,7 @@ final class LauncherSurface extends View {
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
+        void onSettingAction(int action);
         void onWeatherTapped();
     }
 
@@ -87,6 +108,8 @@ final class LauncherSurface extends View {
     private float homeListStartPx;
     private float settingsMaxRowTopPx;
     private float settingsQuickRowTopPx;
+    private float settingsViewportTopPx;
+    private float settingsViewportBottomPx;
     private float appsViewportTopPx;
     private float appsViewportBottomPx;
     private int visibleHomeRowsCache;
@@ -95,6 +118,8 @@ final class LauncherSurface extends View {
     private float homeCountWidth;
 
     private float appScroll;
+    private float settingsScroll;
+    private int hiddenAppCount;
     private float downX;
     private float downY;
     private float lastY;
@@ -219,6 +244,11 @@ final class LauncherSurface extends View {
         appScroll = 0f;
         scroller.abortAnimation();
         if (page == PAGE_APPS) invalidate();
+    }
+
+    void setHiddenAppCount(int count) {
+        hiddenAppCount = Math.max(0, count);
+        if (page == PAGE_SETTINGS) invalidate();
     }
 
     void setHomeConfiguration(List<AppEntry> home, int max, String quickLabel) {
@@ -356,6 +386,8 @@ final class LauncherSurface extends View {
         contentTopPx = topInset + dp(28f);
         settingsMaxRowTopPx = contentTopPx + dp(72f);
         settingsQuickRowTopPx = contentTopPx + dp(198f);
+        settingsViewportTopPx = contentTopPx + dp(42f);
+        settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
         appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
 
@@ -564,49 +596,130 @@ final class LauncherSurface extends View {
     }
 
     private void drawSettings(Canvas canvas) {
-        float x = left();
+        float x = leftPx;
         float right = rightPx;
-        float top = contentTop();
+        float top = contentTopPx;
 
         canvas.drawText("SETTINGS", x, top + sp(DesignTokens.LABEL_SP), labelPaint);
 
-        canvas.drawText("HOME", x, top + dp(58f), labelPaint);
-        drawMaxHomeRow(canvas, settingsMaxRowTop(), x, right);
+        int save = canvas.save();
+        canvas.clipRect(x, settingsViewportTopPx, right, settingsViewportBottomPx);
 
-        canvas.drawText("QUICK LAUNCH", x, top + dp(181f), labelPaint);
-        drawQuickLaunchRow(canvas, settingsQuickRowTop(), x, right);
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float y = settingsRowTop(index) - settingsScroll;
+            if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
+
+            drawSettingsRow(
+                    canvas,
+                    settingsLabel(index),
+                    settingsValue(index),
+                    y,
+                    x,
+                    right
+            );
+        }
+
+        canvas.restoreToCount(save);
     }
 
-    private void drawMaxHomeRow(Canvas canvas, float y, float x, float right) {
-        float height = dp(62f);
-        canvas.drawText("Visible apps", x, y + dp(25f), appPaint);
-        canvas.drawText("Maximum shown on Home", x, y + dp(47f), metaPaint);
+    private void drawSettingsRow(
+            Canvas canvas,
+            String label,
+            String value,
+            float y,
+            float x,
+            float right
+    ) {
+        float baseline = y + rowHeightPx * 0.58f;
+        canvas.drawText(label, x, baseline, appPaint);
 
-        float plusX = right - dp(9f);
-        float countX = right - dp(47f);
-        float minusX = right - dp(87f);
-        float baseline = y + dp(34f);
+        if (value != null && !value.isEmpty()) {
+            float width = metaPaint.measureText(value);
+            canvas.drawText(value, right - width, baseline, metaPaint);
+        }
 
-        canvas.drawText("−", minusX - appPaint.measureText("−") / 2f, baseline, appPaint);
-        canvas.drawText(homeCountText, countX - homeCountWidth / 2f, baseline, titlePaint);
-        canvas.drawText("+", plusX - appPaint.measureText("+") / 2f, baseline, appPaint);
-
-        canvas.drawRect(x, y + height - dp(1f), right, y + height, dividerPaint);
-    }
-
-    private void drawQuickLaunchRow(Canvas canvas, float y, float x, float right) {
-        float height = dp(66f);
-        rect.set(x, y, right, y + height);
-        canvas.drawRoundRect(
-                rect,
-                dp(DesignTokens.CORNER_DP),
-                dp(DesignTokens.CORNER_DP),
-                surfacePaint
+        canvas.drawRect(
+                x,
+                y + rowHeightPx - dp(1f),
+                right,
+                y + rowHeightPx,
+                dividerPaint
         );
+    }
 
-        canvas.drawText("Swipe up", x + dp(14f), y + dp(26f), appPaint);
-        canvas.drawText(quickAppLabel, x + dp(14f), y + dp(49f), metaPaint);
-        canvas.drawText("›", right - dp(22f), y + dp(39f), titlePaint);
+    private String settingsLabel(int index) {
+        switch (index) {
+            case 0: return "Visible apps";
+            case 1: return "Home position";
+            case 2: return "Density";
+            case 3: return "Text size";
+            case 4: return "Time";
+            case 5: return "Date";
+            case 6: return "Weather";
+            case 7: return "Battery";
+            case 8: return "Status layout";
+            case 9: return "Time format";
+            case 10: return "Date style";
+            case 11: return "Weather detail";
+            case 12: return "Battery detail";
+            case 13: return "Swipe up";
+            case 14: return "Animation";
+            case 15: return "Haptics";
+            case 16: return "Hidden apps";
+            case 17: return "Export config";
+            case 18: return "Import config";
+            default: return "";
+        }
+    }
+
+    private String settingsValue(int index) {
+        switch (index) {
+            case 0: return Integer.toString(maxHomeApps);
+            case 1: return titleCase(uiConfig.homePosition);
+            case 2: return titleCase(uiConfig.density);
+            case 3: return titleCase(uiConfig.textSize);
+            case 4: return onOff(uiConfig.showTime);
+            case 5: return onOff(uiConfig.showDate);
+            case 6: return onOff(uiConfig.showWeather);
+            case 7: return onOff(uiConfig.showBattery);
+            case 8:
+                if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) return "Date first";
+                if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) return "Compact";
+                return "Time first";
+            case 9:
+                if (LauncherPreferences.CLOCK_12.equals(uiConfig.clockFormat)) return "12h";
+                if (LauncherPreferences.CLOCK_24.equals(uiConfig.clockFormat)) return "24h";
+                return "System";
+            case 10: return titleCase(uiConfig.dateStyle);
+            case 11:
+                if (LauncherPreferences.WEATHER_TEMP.equals(uiConfig.weatherMode)) return "Temperature";
+                if (LauncherPreferences.WEATHER_CONDITION.equals(uiConfig.weatherMode)) return "Condition";
+                return "Both";
+            case 12: return titleCase(uiConfig.batteryMode);
+            case 13: return quickAppLabel;
+            case 14: return titleCase(uiConfig.animationSpeed);
+            case 15: return onOff(uiConfig.haptics);
+            case 16: return hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount);
+            default: return "";
+        }
+    }
+
+    private float settingsRowTop(int index) {
+        float y = settingsViewportTopPx;
+        for (int i = 0; i < index; i++) {
+            y += rowHeightPx;
+            if (i == 3 || i == 12 || i == 15) y += dp(24f);
+        }
+        return y;
+    }
+
+    private static String onOff(boolean value) {
+        return value ? "On" : "Off";
+    }
+
+    private static String titleCase(String value) {
+        if (value == null || value.isEmpty()) return "";
+        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
@@ -666,6 +779,11 @@ final class LauncherSurface extends View {
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
                     float dy = event.getY() - lastY;
                     appScroll = clamp(appScroll - dy, 0f, maxAppScroll());
+                    lastY = event.getY();
+                    postInvalidateOnAnimation();
+                } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_SETTINGS) {
+                    float dy = event.getY() - lastY;
+                    settingsScroll = clamp(settingsScroll - dy, 0f, maxSettingsScroll());
                     lastY = event.getY();
                     postInvalidateOnAnimation();
                 }
@@ -755,17 +873,23 @@ final class LauncherSurface extends View {
     }
 
     private void finishVerticalGesture(MotionEvent event, float velocityY) {
-        if (page == PAGE_APPS) {
+        if (page == PAGE_APPS || page == PAGE_SETTINGS) {
             if (Math.abs(velocityY) >= minFlingVelocity) {
+                int current = page == PAGE_APPS
+                        ? Math.round(appScroll)
+                        : Math.round(settingsScroll);
+                int max = page == PAGE_APPS
+                        ? Math.round(maxAppScroll())
+                        : Math.round(maxSettingsScroll());
                 scroller.fling(
                         0,
-                        Math.round(appScroll),
+                        current,
                         0,
                         -Math.round(velocityY),
                         0,
                         0,
                         0,
-                        Math.round(maxAppScroll())
+                        max
                 );
                 postInvalidateOnAnimation();
             }
@@ -782,7 +906,8 @@ final class LauncherSurface extends View {
 
     @Override public void computeScroll() {
         if (!scroller.computeScrollOffset()) return;
-        appScroll = scroller.getCurrY();
+        if (page == PAGE_SETTINGS) settingsScroll = scroller.getCurrY();
+        else appScroll = scroller.getCurrY();
         postInvalidateOnAnimation();
     }
 
@@ -827,20 +952,43 @@ final class LauncherSurface extends View {
             return;
         }
 
-        float maxRowTop = settingsMaxRowTop();
-        if (y >= maxRowTop && y <= maxRowTop + dp(62f)) {
-            float right = getWidth() - left();
-            if (x >= right - dp(112f) && x < right - dp(66f)) {
-                host.onHomeMaxChanged(maxHomeApps - 1);
-            } else if (x >= right - dp(32f)) {
-                host.onHomeMaxChanged(maxHomeApps + 1);
+        float contentY = y + settingsScroll;
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float rowTop = settingsRowTop(index);
+            if (contentY >= rowTop && contentY < rowTop + rowHeightPx) {
+                handleSettingsRow(index);
+                return;
             }
-            return;
         }
+    }
 
-        float quickRowTop = settingsQuickRowTop();
-        if (y >= quickRowTop && y <= quickRowTop + dp(66f)) {
-            host.onQuickAppPickerRequested();
+    private void handleSettingsRow(int index) {
+        switch (index) {
+            case 0:
+                int next = maxHomeApps >= LauncherPreferences.MAX_HOME_APPS
+                        ? LauncherPreferences.MIN_HOME_APPS
+                        : maxHomeApps + 1;
+                host.onHomeMaxChanged(next);
+                break;
+            case 1: host.onSettingAction(ACTION_HOME_POSITION); break;
+            case 2: host.onSettingAction(ACTION_HOME_DENSITY); break;
+            case 3: host.onSettingAction(ACTION_HOME_TEXT); break;
+            case 4: host.onSettingAction(ACTION_TOGGLE_TIME); break;
+            case 5: host.onSettingAction(ACTION_TOGGLE_DATE); break;
+            case 6: host.onSettingAction(ACTION_TOGGLE_WEATHER); break;
+            case 7: host.onSettingAction(ACTION_TOGGLE_BATTERY); break;
+            case 8: host.onSettingAction(ACTION_STATUS_LAYOUT); break;
+            case 9: host.onSettingAction(ACTION_CLOCK_FORMAT); break;
+            case 10: host.onSettingAction(ACTION_DATE_STYLE); break;
+            case 11: host.onSettingAction(ACTION_WEATHER_MODE); break;
+            case 12: host.onSettingAction(ACTION_BATTERY_MODE); break;
+            case 13: host.onQuickAppPickerRequested(); break;
+            case 14: host.onSettingAction(ACTION_ANIMATION); break;
+            case 15: host.onSettingAction(ACTION_HAPTICS); break;
+            case 16: host.onSettingAction(ACTION_HIDDEN_APPS); break;
+            case 17: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
+            case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            default: break;
         }
     }
 
@@ -876,6 +1024,12 @@ final class LauncherSurface extends View {
         float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
         float content = filteredApps.size() * rowHeightPx;
         return Math.max(0f, content - viewport);
+    }
+
+    private float maxSettingsScroll() {
+        float contentBottom = settingsRowTop(SETTINGS_ROW_COUNT - 1) + rowHeightPx;
+        float viewport = Math.max(0f, settingsViewportBottomPx - settingsViewportTopPx);
+        return Math.max(0f, contentBottom - settingsViewportTopPx - viewport);
     }
 
     private void cancelPendingLongPress() {
