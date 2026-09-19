@@ -35,6 +35,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /**
  * Minimal native launcher shell.
@@ -90,6 +91,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             getWindow().setNavigationBarContrastEnforced(false);
             getWindow().setStatusBarContrastEnforced(false);
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(false);
+        }
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
@@ -109,8 +113,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 android.graphics.Insets bars =
                         insets.getInsets(WindowInsets.Type.systemBars());
+                android.graphics.Insets ime =
+                        insets.getInsets(WindowInsets.Type.ime());
                 top = bars.top;
-                bottom = bars.bottom;
+                bottom = Math.max(bars.bottom, ime.bottom);
             } else {
                 top = insets.getSystemWindowInsetTop();
                 bottom = insets.getSystemWindowInsetBottom();
@@ -161,6 +167,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void updateClock() {
+        TimeZone zone = TimeZone.getDefault();
+        dateFormat.setTimeZone(zone);
+        timeFormat.setTimeZone(zone);
+        timeFormat.applyPattern(
+                android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm"
+        );
+
         Date now = new Date();
         surface.setClock(dateFormat.format(now), timeFormat.format(now));
     }
