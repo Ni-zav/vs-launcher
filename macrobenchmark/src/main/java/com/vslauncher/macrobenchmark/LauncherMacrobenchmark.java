@@ -1,5 +1,6 @@
 package com.vslauncher.macrobenchmark;
 
+import androidx.benchmark.macro.BaselineProfileMode;
 import androidx.benchmark.macro.CompilationMode;
 import androidx.benchmark.macro.FrameTimingMetric;
 import androidx.benchmark.macro.MacrobenchmarkScope;
@@ -91,6 +92,22 @@ public final class LauncherMacrobenchmark {
                 PACKAGE,
                 Arrays.asList(new StartupTimingMetric()),
                 new CompilationMode.None(),
+                StartupMode.COLD,
+                ITERATIONS,
+                scope -> {
+                    scope.pressHome(300L);
+                    return Unit.INSTANCE;
+                },
+                this::launch
+        );
+    }
+
+    @Test
+    public void coldStartupWithBaselineProfile() {
+        benchmarkRule.measureRepeated(
+                PACKAGE,
+                Arrays.asList(new StartupTimingMetric()),
+                new CompilationMode.Partial(BaselineProfileMode.Require, 0),
                 StartupMode.COLD,
                 ITERATIONS,
                 scope -> {
