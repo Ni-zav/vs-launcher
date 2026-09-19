@@ -62,23 +62,35 @@ Weather uses the Open-Meteo forecast API. VS Launcher requests only Android coar
 
 Open-Meteo data is attributed in the Settings screen. Check Open-Meteo's current terms before distributing the launcher for a commercial use case.
 
-## Build
+## Build and install
 
-Requirements:
+The Android device itself needs **no extra framework or runtime**. The APK contains the launcher code and native vector/adaptive icon resources; Android 8.0 / API 26+ is the runtime.
+
+### Easiest: GitHub Actions
+
+Open **Actions → Android CI → Run workflow**. A successful run publishes a downloadable **vs-launcher-debug-apk** artifact containing the installable APK.
+
+### Local build
+
+Build-machine requirements:
 
 - JDK 17
-- Android SDK 35
-- Gradle 8.7 or Android Studio with a compatible Gradle setup
+- Android SDK 35 + Build Tools 35.0.0
+- Gradle 8.7 or Android Studio
 
 From the repository root:
 
 ```sh
-gradle --no-daemon :app:assembleDebug :app:lintDebug
+bash scripts/build-debug-apk.sh
 ```
 
-GitHub Actions runs the same build + lint gate for `main`, `feat/**`, and pull requests.
+Output:
 
-Install the debug APK on a device/emulator, press Home, and select **VS Launcher** as the default launcher.
+```text
+dist/VS-Launcher-0.2.0-debug.apk
+```
+
+For exact sideload steps, ADB installation, persistent release signing, CI debug-key caveats, and the SVG/adaptive-icon workflow, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
 
 ## Architecture
 
