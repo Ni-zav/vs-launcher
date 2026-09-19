@@ -49,7 +49,7 @@ final class LauncherSurface extends View {
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
-        void onSearchRequested();
+        void onSearchGestureRequested();
         void onSettingAction(int action);
         void onWeatherTapped();
     }
@@ -927,7 +927,7 @@ final class LauncherSurface extends View {
         if (dy < -dp(64f)) {
             host.onQuickLaunchRequested();
         } else if (dy > dp(64f)) {
-            host.onSearchRequested();
+            host.onSearchGestureRequested();
         }
     }
 
