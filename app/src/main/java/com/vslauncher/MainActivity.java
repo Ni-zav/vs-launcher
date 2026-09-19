@@ -63,6 +63,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private AppRepository appRepository;
     private WeatherService weatherService;
     private LauncherPreferences launcherPreferences;
+    private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
 
     private List<AppEntry> apps = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
@@ -70,6 +71,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
+    private String latestWeatherText = "Tap for weather";
     private int bottomInset;
     private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
@@ -102,11 +104,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             getWindow().setDecorFitsSystemWindows(false);
         }
         launcherPreferences = new LauncherPreferences(this);
+        uiConfig = LauncherUiConfig.from(launcherPreferences);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
 
         surface = new LauncherSurface(this, this);
+        surface.setUiConfig(uiConfig);
         root.addView(surface, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -136,7 +140,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
-        weatherService = new WeatherService(this, text -> surface.setWeather(text));
+        weatherService = new WeatherService(this, text -> {
+            latestWeatherText = text;
+            surface.setWeather(formatWeather(text));
+        });
 
         updateClock();
         reloadApps();
@@ -205,12 +212,48 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         TimeZone zone = TimeZone.getDefault();
         dateFormat.setTimeZone(zone);
         timeFormat.setTimeZone(zone);
-        timeFormat.applyPattern(
-                android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm"
-        );
+
+        if (LauncherPreferences.CLOCK_24.equals(uiConfig.clockFormat)) {
+            timeFormat.applyPattern("HH:mm");
+        } else if (LauncherPreferences.CLOCK_12.equals(uiConfig.clockFormat)) {
+            timeFormat.applyPattern("h:mm");
+        } else {
+            timeFormat.applyPattern(
+                    android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm"
+            );
+        }
+
+        if (LauncherPreferences.DATE_NUMERIC.equals(uiConfig.dateStyle)) {
+            dateFormat.applyPattern("dd.MM.yyyy");
+        } else if (LauncherPreferences.DATE_SHORT.equals(uiConfig.dateStyle)) {
+            dateFormat.applyPattern("EEE · d MMM");
+        } else {
+            dateFormat.applyPattern("EEEE · d MMM");
+        }
 
         Date now = new Date();
         surface.setClock(dateFormat.format(now), timeFormat.format(now));
+    }
+
+    private void applyUiConfiguration() {
+        uiConfig = LauncherUiConfig.from(launcherPreferences);
+        surface.setUiConfig(uiConfig);
+        surface.setWeather(formatWeather(latestWeatherText));
+        updateClock();
+    }
+
+    private String formatWeather(String text) {
+        if (text == null || text.isEmpty()) return "Weather";
+        int split = text.indexOf(" · ");
+        if (split <= 0) return text;
+
+        if (LauncherPreferences.WEATHER_TEMP.equals(uiConfig.weatherMode)) {
+            return text.substring(0, split);
+        }
+        if (LauncherPreferences.WEATHER_CONDITION.equals(uiConfig.weatherMode)) {
+            return text.substring(split + 3);
+        }
+        return text;
     }
 
     private void reloadApps() {
@@ -551,7 +594,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             return;
         }
 
-        surface.setWeather("Updating weather…");
+        latestWeatherText = "Updating weather…";
+        surface.setWeather(latestWeatherText);
         weatherService.refreshNow();
     }
 
@@ -564,10 +608,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (requestCode != REQUEST_COARSE_LOCATION) return;
 
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            surface.setWeather("Updating weather…");
+            latestWeatherText = "Updating weather…";
+            surface.setWeather(latestWeatherText);
             weatherService.refreshNow();
         } else {
-            surface.setWeather("Weather needs location");
+            latestWeatherText = "Weather needs location";
+            surface.setWeather(latestWeatherText);
         }
     }
 
