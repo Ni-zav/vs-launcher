@@ -19,6 +19,7 @@ android {
             debuggable true
             signingConfig signingConfigs.debug
             minifyEnabled true
+            proguardFiles 'proguard-rules.pro'
             matchingFallbacks = ['release']
         }
     }
