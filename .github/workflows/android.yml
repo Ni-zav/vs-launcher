@@ -36,8 +36,10 @@ jobs:
       - name: Build and lint
         run: bash scripts/build-debug-apk.sh
 
-      - name: Compile macrobenchmark APK
-        run: gradle --no-daemon :macrobenchmark:assembleBenchmark
+      - name: Compile performance test APKs
+        run: |
+          gradle --no-daemon :macrobenchmark:assembleBenchmark
+          gradle --no-daemon :app:assembleBaselineProfile :macrobenchmark:assembleBaselineProfile
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
