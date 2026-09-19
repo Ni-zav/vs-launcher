@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "VS Launcher"
 include(":app")
+include(":macrobenchmark")
