@@ -13,6 +13,14 @@ android {
     }
 
     targetProjectPath = ':app'
+
+    buildTypes {
+        benchmark {
+            debuggable true
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
+    }
 }
 
 dependencies {
