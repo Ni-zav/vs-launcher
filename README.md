@@ -1,14 +1,17 @@
 # VS Launcher
 
-VS Launcher is a dependency-free native Android home screen written in Java with platform APIs only. Version 0.2 keeps the interface deliberately sparse: a true-black canvas, white typography, live device status, a fast text-first app list, and direct gestures.
+VS Launcher is a dependency-free native Android home screen written in Java with platform APIs only. Version 0.3 keeps the interface deliberately sparse: a true-black canvas, white typography, live device status, a fast text-first app list, and direct gestures.
 
 ## What works
 
 - Android Home/launcher intent handling.
-- Up to eight apps on Home and a searchable All Apps page.
+- 1–8 persistent Home app slots; long-press any Home row to replace its app.
+- Searchable All Apps page.
 - Smooth horizontal drag between Settings, Home, and All Apps.
 - Kinetic All Apps scrolling with Android's `OverScroller`.
-- Configurable swipe-up shortcut.
+- Swipe up on Home launches one user-selected quick app.
+- Settings contains only Home visible-app count and the swipe-up app selector.
+- System status bar is hidden while VS Launcher is active.
 - Live battery percentage, charging state, and a custom battery glyph.
 - Date/time aligned to minute boundaries and the device's 12/24-hour setting.
 - Current weather from Open-Meteo using coarse location only.
@@ -22,10 +25,10 @@ The visual system is intentionally monochrome and uses Android system fonts so t
 
 | Role | Typeface | Size | Tone |
 | --- | --- | ---: | --- |
-| Time | sans-serif-light | 52sp | 96% white |
-| Titles | sans-serif | 22sp | 96% white |
+| Time | sans-serif-light | 62sp | 96% white |
+| Titles | sans-serif | 20sp | 96% white |
 | App names | sans-serif | 19sp | 96% white |
-| Date | sans-serif | 14sp | 72% white |
+| Date | sans-serif-medium | 13sp | 72% white |
 | Metadata | sans-serif | 13sp | 72% white |
 | Section labels | sans-serif-medium | 11sp | 46% white |
 
@@ -51,16 +54,18 @@ Actual frame rate still depends on the device, refresh rate, thermal state, and 
 - Swipe left from Home → All Apps.
 - Swipe right from Home → Settings.
 - Swipe horizontally back toward Home from either side page.
-- Swipe up on Home → the action selected in Settings.
+- Long-press a Home app row → choose the app for that exact slot.
+- Swipe up on Home → open the quick-launch app selected in Settings.
+- Settings → choose how many Home app rows are visible (1–8) and choose the swipe-up app.
 - Type in the bottom search field on All Apps.
-- Tap the weather line on Home to grant coarse location permission or force a refresh.
+- Tap the weather status on Home to grant coarse location permission or force a refresh.
 - Back from a side page → Home.
 
 ## Weather and privacy
 
 Weather uses the Open-Meteo forecast API. VS Launcher requests only Android coarse location, rounds coordinates to two decimal places before sending them, stores only temperature/weather code/update time in local app preferences, and does not retain coordinates.
 
-Open-Meteo data is attributed in the Settings screen. Check Open-Meteo's current terms before distributing the launcher for a commercial use case.
+Weather data is provided by Open-Meteo. Check Open-Meteo's current terms before distributing the launcher for a commercial use case.
 
 ## Build and install
 
@@ -87,7 +92,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.2.0-debug.apk
+dist/VS-Launcher-0.3.0-debug.apk
 ```
 
 For exact sideload steps, ADB installation, persistent release signing, CI debug-key caveats, and the SVG/adaptive-icon workflow, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
