@@ -38,3 +38,7 @@ android {
         buildConfig false
     }
 }
+
+dependencies {
+    benchmarkImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
+}
