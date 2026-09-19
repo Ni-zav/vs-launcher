@@ -52,6 +52,22 @@ final class LauncherUiConfig {
         this.haptics = haptics;
     }
 
+    static LauncherUiConfig defaults() {
+        return new LauncherUiConfig(
+                LauncherPreferences.POSITION_TOP,
+                LauncherPreferences.DENSITY_NORMAL,
+                LauncherPreferences.TEXT_MEDIUM,
+                true, true, true, true,
+                LauncherPreferences.STATUS_TIME_FIRST,
+                LauncherPreferences.CLOCK_SYSTEM,
+                LauncherPreferences.DATE_WEEKDAY,
+                LauncherPreferences.WEATHER_BOTH,
+                LauncherPreferences.BATTERY_BOTH,
+                LauncherPreferences.ANIMATION_FAST,
+                true
+        );
+    }
+
     static LauncherUiConfig from(LauncherPreferences prefs) {
         return new LauncherUiConfig(
                 prefs.homePosition(),
