@@ -60,8 +60,12 @@ final class WeatherService {
         if (cached != null && System.currentTimeMillis() - cached.updatedAt < CACHE_TTL_MS) {
             return;
         }
+        refreshNow();
+    }
+
+    void refreshNow() {
         if (!hasLocationPermission()) {
-            if (cached == null) callback.onWeather("Weather · location permission");
+            callback.onWeather("Weather · location permission");
             return;
         }
         findLocationAndFetch();
@@ -84,9 +88,17 @@ final class WeatherService {
                 return;
             }
 
-            String provider = manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-                    ? LocationManager.NETWORK_PROVIDER
-                    : LocationManager.GPS_PROVIDER;
+            String provider = null;
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                provider = LocationManager.NETWORK_PROVIDER;
+            } else if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                provider = LocationManager.GPS_PROVIDER;
+            }
+
+            if (provider == null) {
+                callback.onWeather("Weather · location disabled");
+                return;
+            }
 
             manager.requestSingleUpdate(provider, new LocationListener() {
                 @Override public void onLocationChanged(Location location) {
@@ -132,7 +144,9 @@ final class WeatherService {
                 connection.setRequestProperty("User-Agent", "VS-Launcher/0.2");
 
                 int status = connection.getResponseCode();
-                if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status);
+                if (status < 200 || status >= 300) {
+                    throw new IllegalStateException("HTTP " + status);
+                }
 
                 byte[] bytes;
                 try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
@@ -159,7 +173,9 @@ final class WeatherService {
                 WeatherSnapshot snapshot = new WeatherSnapshot(now, temperature, code);
                 main.post(() -> callback.onWeather(snapshot.displayText()));
             } catch (Exception error) {
-                if (readCache() == null) main.post(() -> callback.onWeather("Weather unavailable"));
+                WeatherSnapshot cached = readCache();
+                String fallback = cached == null ? "Weather unavailable" : cached.displayText();
+                main.post(() -> callback.onWeather(fallback));
             } finally {
                 if (connection != null) connection.disconnect();
             }
