@@ -304,6 +304,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         homeApps = Collections.unmodifiableList(resolved);
         surface.setHomeConfiguration(homeApps, maxHomeApps, quickLabel);
+        surface.setHiddenAppCount(launcherPreferences.hiddenComponents().size());
     }
 
     private AppEntry firstUnusedApp(Set<String> used) {
@@ -520,6 +521,111 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         showQuickAppPicker();
     }
 
+    @Override public void onSettingAction(int action) {
+        switch (action) {
+            case LauncherSurface.ACTION_HOME_POSITION:
+                launcherPreferences.setHomePosition(next(
+                        uiConfig.homePosition,
+                        LauncherPreferences.POSITION_TOP,
+                        LauncherPreferences.POSITION_CENTER,
+                        LauncherPreferences.POSITION_BOTTOM
+                ));
+                break;
+            case LauncherSurface.ACTION_HOME_DENSITY:
+                launcherPreferences.setDensity(next(
+                        uiConfig.density,
+                        LauncherPreferences.DENSITY_COMPACT,
+                        LauncherPreferences.DENSITY_NORMAL,
+                        LauncherPreferences.DENSITY_SPACIOUS
+                ));
+                break;
+            case LauncherSurface.ACTION_HOME_TEXT:
+                launcherPreferences.setTextSize(next(
+                        uiConfig.textSize,
+                        LauncherPreferences.TEXT_SMALL,
+                        LauncherPreferences.TEXT_MEDIUM,
+                        LauncherPreferences.TEXT_LARGE
+                ));
+                break;
+            case LauncherSurface.ACTION_TOGGLE_TIME:
+                launcherPreferences.setShowTime(!uiConfig.showTime);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_DATE:
+                launcherPreferences.setShowDate(!uiConfig.showDate);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_WEATHER:
+                launcherPreferences.setShowWeather(!uiConfig.showWeather);
+                break;
+            case LauncherSurface.ACTION_TOGGLE_BATTERY:
+                launcherPreferences.setShowBattery(!uiConfig.showBattery);
+                break;
+            case LauncherSurface.ACTION_STATUS_LAYOUT:
+                launcherPreferences.setStatusLayout(next(
+                        uiConfig.statusLayout,
+                        LauncherPreferences.STATUS_TIME_FIRST,
+                        LauncherPreferences.STATUS_DATE_FIRST,
+                        LauncherPreferences.STATUS_COMPACT
+                ));
+                break;
+            case LauncherSurface.ACTION_CLOCK_FORMAT:
+                launcherPreferences.setClockFormat(next(
+                        uiConfig.clockFormat,
+                        LauncherPreferences.CLOCK_SYSTEM,
+                        LauncherPreferences.CLOCK_24,
+                        LauncherPreferences.CLOCK_12
+                ));
+                break;
+            case LauncherSurface.ACTION_DATE_STYLE:
+                launcherPreferences.setDateStyle(next(
+                        uiConfig.dateStyle,
+                        LauncherPreferences.DATE_WEEKDAY,
+                        LauncherPreferences.DATE_SHORT,
+                        LauncherPreferences.DATE_NUMERIC
+                ));
+                break;
+            case LauncherSurface.ACTION_WEATHER_MODE:
+                launcherPreferences.setWeatherMode(next(
+                        uiConfig.weatherMode,
+                        LauncherPreferences.WEATHER_BOTH,
+                        LauncherPreferences.WEATHER_TEMP,
+                        LauncherPreferences.WEATHER_CONDITION
+                ));
+                break;
+            case LauncherSurface.ACTION_BATTERY_MODE:
+                launcherPreferences.setBatteryMode(next(
+                        uiConfig.batteryMode,
+                        LauncherPreferences.BATTERY_BOTH,
+                        LauncherPreferences.BATTERY_ICON,
+                        LauncherPreferences.BATTERY_PERCENT
+                ));
+                break;
+            case LauncherSurface.ACTION_ANIMATION:
+                launcherPreferences.setAnimationSpeed(next(
+                        uiConfig.animationSpeed,
+                        LauncherPreferences.ANIMATION_INSTANT,
+                        LauncherPreferences.ANIMATION_FAST,
+                        LauncherPreferences.ANIMATION_NORMAL
+                ));
+                break;
+            case LauncherSurface.ACTION_HAPTICS:
+                launcherPreferences.setHaptics(!uiConfig.haptics);
+                break;
+            case LauncherSurface.ACTION_HIDDEN_APPS:
+                showHiddenAppsManager();
+                return;
+            case LauncherSurface.ACTION_EXPORT_CONFIG:
+                exportConfiguration();
+                return;
+            case LauncherSurface.ACTION_IMPORT_CONFIG:
+                importConfiguration();
+                return;
+            default:
+                return;
+        }
+
+        applyUiConfiguration();
+    }
+
     @Override public void onQuickLaunchRequested() {
         if (quickApp != null) {
             launchApp(quickApp);
@@ -615,6 +721,26 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             latestWeatherText = "Weather needs location";
             surface.setWeather(latestWeatherText);
         }
+    }
+
+    private static String next(String current, String... values) {
+        if (values.length == 0) return current;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) return values[(i + 1) % values.length];
+        }
+        return values[0];
+    }
+
+    private void showHiddenAppsManager() {
+        // Implemented in the dedicated app-management slice.
+    }
+
+    private void exportConfiguration() {
+        // Implemented in the dedicated import/export slice.
+    }
+
+    private void importConfiguration() {
+        // Implemented in the dedicated import/export slice.
     }
 
     private int dp(float value) {
