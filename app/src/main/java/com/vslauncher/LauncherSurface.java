@@ -54,6 +54,7 @@ final class LauncherSurface extends View {
     private String dateText = "";
     private String timeText = "";
     private String weatherText = "Weather · tap to enable";
+    private String batteryText = "—";
     private String upAction = "Apps";
 
     private int batteryLevel = -1;
@@ -129,6 +130,7 @@ final class LauncherSurface extends View {
     void setBattery(int level, boolean isCharging) {
         batteryLevel = level;
         charging = isCharging;
+        batteryText = level < 0 ? "—" : level + "%" + (isCharging ? " · charging" : "");
         invalidateHome();
     }
 
@@ -272,9 +274,6 @@ final class LauncherSurface extends View {
         float batteryX = x;
         drawBattery(canvas, batteryX, metaY - dp(10f));
 
-        String batteryText = batteryLevel < 0
-                ? "—"
-                : batteryLevel + "%" + (charging ? " · charging" : "");
         canvas.drawText(batteryText, batteryX + dp(38f), metaY, metaPaint);
         canvas.drawText(weatherText, x, metaY + dp(30f), metaPaint);
 
