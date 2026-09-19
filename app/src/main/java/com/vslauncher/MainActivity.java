@@ -564,7 +564,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     @Override public void onAllAppsLongPressed(AppEntry app) {
         if (app == null) return;
         CharSequence[] actions = {"Add to Home", "Hide", "App info", "Uninstall"};
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle(app.label)
                 .setItems(actions, (dialog, which) -> {
                     switch (which) {
@@ -733,7 +733,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (slot + 1 < maxHomeApps) actions.add("Move down");
         actions.add("Clear slot");
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home slot " + (slot + 1))
                 .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
                     String action = actions.get(which);
@@ -770,7 +770,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         CharSequence[] labels = new CharSequence[allApps.size()];
         for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
                     AppEntry selected = allApps.get(which);
@@ -801,7 +801,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             input.setSelection(existing.length());
         }
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Rename " + app.label)
                 .setView(input)
                 .setPositiveButton("Save", (dialog, which) -> {
@@ -826,7 +826,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             slots[i] = (i + 1) + " · " + name;
         }
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Add " + app.label)
                 .setItems(slots, (dialog, which) -> {
                     launcherPreferences.setHomeSlot(
@@ -861,7 +861,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         CharSequence[] labels = new CharSequence[allApps.size()];
         for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
                     AppEntry selected = allApps.get(which);
@@ -943,7 +943,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             checked[i] = launcherPreferences.isHidden(app.component.flattenToString());
         }
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Hidden apps")
                 .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
                     AppEntry app = allApps.get(which);
