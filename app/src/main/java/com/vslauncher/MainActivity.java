@@ -17,6 +17,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -534,6 +536,35 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         showHomeSlotMenu(index);
     }
 
+    @Override public void onAllAppsLongPressed(AppEntry app) {
+        if (app == null) return;
+        CharSequence[] actions = {"Add to Home", "Hide", "App info", "Uninstall"};
+        new AlertDialog.Builder(this)
+                .setTitle(app.label)
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            showAddToHomeSlotPicker(app);
+                            break;
+                        case 1:
+                            launcherPreferences.setHidden(app.component.flattenToString(), true);
+                            refreshVisibleApps();
+                            resolveLauncherConfiguration();
+                            break;
+                        case 2:
+                            openAppInfo(app);
+                            break;
+                        case 3:
+                            requestUninstall(app);
+                            break;
+                        default:
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     @Override public void onHomeMaxChanged(int requestedMax) {
         int safeMax = clamp(
                 requestedMax,
@@ -758,6 +789,43 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .show();
     }
 
+    private void showAddToHomeSlotPicker(AppEntry app) {
+        CharSequence[] slots = new CharSequence[maxHomeApps];
+        for (int i = 0; i < maxHomeApps; i++) {
+            AppEntry existing = i < homeApps.size() ? homeApps.get(i) : null;
+            String name = existing == null ? "Empty" : existing.label;
+            slots[i] = (i + 1) + " · " + name;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Add " + app.label)
+                .setItems(slots, (dialog, which) -> {
+                    launcherPreferences.setHomeSlot(
+                            which,
+                            app.component.flattenToString()
+                    );
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void openAppInfo(AppEntry app) {
+        Intent intent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + app.component.getPackageName())
+        );
+        startActivity(intent);
+    }
+
+    private void requestUninstall(AppEntry app) {
+        Intent intent = new Intent(
+                Intent.ACTION_DELETE,
+                Uri.parse("package:" + app.component.getPackageName())
+        );
+        startActivity(intent);
+    }
+
     private void showQuickAppPicker() {
         if (allApps.isEmpty()) return;
 
@@ -836,7 +904,36 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showHiddenAppsManager() {
-        // Implemented in the dedicated app-management slice.
+        if (allApps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        boolean[] checked = new boolean[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) {
+            AppEntry app = allApps.get(i);
+            labels[i] = app.label;
+            checked[i] = launcherPreferences.isHidden(app.component.flattenToString());
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Hidden apps")
+                .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
+                    AppEntry app = allApps.get(which);
+                    launcherPreferences.setHidden(
+                            app.component.flattenToString(),
+                            isChecked
+                    );
+                })
+                .setPositiveButton("Done", (picker, which) -> {
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", (picker, which) -> {
+                    // Choices apply immediately; rebuild state so the screen is always consistent.
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .create();
+        dialog.show();
     }
 
     private void exportConfiguration() {
