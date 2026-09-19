@@ -29,6 +29,7 @@ final class WeatherService {
     }
 
     private static final long CACHE_TTL_MS = 20L * 60L * 1000L;
+    private static final long MAX_LOCATION_AGE_MS = 30L * 60L * 1000L;
     private static final String PREFS = "weather_cache";
     private static final String KEY_TIME = "updated_at";
     private static final String KEY_TEMP = "temperature";
@@ -83,7 +84,10 @@ final class WeatherService {
                     manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER),
                     manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             );
-            if (best != null) {
+            long now = System.currentTimeMillis();
+            if (best != null
+                    && best.getTime() <= now
+                    && now - best.getTime() <= MAX_LOCATION_AGE_MS) {
                 fetch(best);
                 return;
             }
