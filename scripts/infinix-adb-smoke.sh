@@ -136,8 +136,8 @@ startup_count="$(grep -c '^TotalTime:' "$RESULT_DIR/startup.txt" 2>/dev/null || 
 {
   echo "# Local device test summary"
   echo
-  echo "- Result directory: `$RESULT_DIR`"
-  echo "- APK: `$APK`"
+  printf -- '- Result directory: `%s`\n' "$RESULT_DIR"
+  printf -- '- APK: `%s`\n' "$APK"
   echo "- Requested cold starts: $ITERATIONS"
   echo "- Recorded TotalTime samples: $startup_count"
   echo "- FATAL EXCEPTION lines: $fatal_count"
