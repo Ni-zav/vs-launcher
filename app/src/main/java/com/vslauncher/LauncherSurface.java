@@ -379,7 +379,8 @@ final class LauncherSurface extends View {
 
         canvas.drawText("Weather", x, top + dp(304f), titlePaint);
         canvas.drawText("Coarse location · cached for 20 min", x, top + dp(332f), metaPaint);
-        canvas.drawText("Tap weather on Home to refresh or enable.", x, top + dp(356f), metaPaint);
+        canvas.drawText("Weather data · Open-Meteo", x, top + dp(356f), metaPaint);
+        canvas.drawText("Tap weather on Home to refresh or enable.", x, top + dp(380f), metaPaint);
     }
 
     private void drawSettingRow(Canvas canvas, String value, String subtitle, float y, boolean selected) {
@@ -561,13 +562,26 @@ final class LauncherSurface extends View {
             }
 
             float start = top + dp(230f);
-            int index = (int) ((y - start) / dp(DesignTokens.ROW_HEIGHT_DP));
-            if (index >= 0 && index < Math.min(8, apps.size())) host.onOpenApp(apps.get(index));
+            float hintY = getHeight() - bottomInset - dp(26f);
+            int possibleRows = Math.max(
+                    0,
+                    (int) ((hintY - start - dp(20f)) / dp(DesignTokens.ROW_HEIGHT_DP))
+            );
+            int visibleRows = Math.min(8, Math.min(possibleRows, apps.size()));
+            float rowHeight = dp(DesignTokens.ROW_HEIGHT_DP);
+            if (y < start || y >= start + visibleRows * rowHeight) return;
+
+            int index = (int) ((y - start) / rowHeight);
+            if (index >= 0 && index < visibleRows) host.onOpenApp(apps.get(index));
             return;
         }
 
         if (page == PAGE_APPS) {
-            float start = top + dp(48f) - appScroll;
+            float viewportTop = top + dp(48f);
+            float viewportBottom = getHeight() - bottomInset - dp(96f);
+            if (y < viewportTop || y >= viewportBottom) return;
+
+            float start = viewportTop - appScroll;
             int index = (int) ((y - start) / dp(DesignTokens.ROW_HEIGHT_DP));
             if (index >= 0 && index < filteredApps.size()) host.onOpenApp(filteredApps.get(index));
             return;
