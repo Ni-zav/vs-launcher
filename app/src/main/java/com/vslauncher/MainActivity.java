@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -36,8 +35,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TimeZone;
@@ -71,6 +72,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private WeatherService weatherService;
 
     private List<AppEntry> apps = Collections.emptyList();
+    private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
@@ -219,6 +221,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private void reloadApps() {
         appRepository.load(loaded -> {
             apps = loaded;
+            HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
+            for (AppEntry app : loaded) {
+                index.put(app.component.flattenToString(), app);
+            }
+            appByComponent = Collections.unmodifiableMap(index);
             filteredApps = AppRepository.filter(apps, query);
             surface.setApps(apps, filteredApps);
             resolveLauncherConfiguration();
@@ -281,13 +288,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry findApp(String flattenedComponent) {
         if (flattenedComponent == null || flattenedComponent.isEmpty()) return null;
-        ComponentName component = ComponentName.unflattenFromString(flattenedComponent);
-        if (component == null) return null;
-
-        for (AppEntry app : apps) {
-            if (component.equals(app.component)) return app;
-        }
-        return null;
+        return appByComponent.get(flattenedComponent);
     }
 
     private void registerPackageChanges() {
