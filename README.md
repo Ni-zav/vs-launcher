@@ -1,89 +1,147 @@
 # VS Launcher
 
-VS Launcher is a dependency-free native Android home screen written in Java with platform APIs only. Version 0.3 keeps the interface deliberately sparse: a true-black canvas, white typography, live device status, a fast text-first app list, and direct gestures.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.4 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
 
-## What works
+## Interaction
 
-- Android Home/launcher intent handling.
-- 1–8 persistent Home app slots; long-press any Home row to replace its app.
-- Searchable All Apps page.
-- Smooth horizontal drag between Settings, Home, and All Apps.
-- Kinetic All Apps scrolling with Android's `OverScroller`.
-- Swipe up on Home launches one user-selected quick app.
-- Settings contains only Home visible-app count and the swipe-up app selector.
-- System status bar is hidden while VS Launcher is active.
-- Live battery percentage, charging state, and a custom battery glyph.
-- Date/time aligned to minute boundaries and the device's 12/24-hour setting.
-- Current weather from Open-Meteo using coarse location only.
-- Weather cached locally for 20 minutes; stale last-known location is rejected after 30 minutes.
-- App list refresh when packages are installed, removed, changed, or replaced.
-- Insets for status/navigation bars and the on-screen keyboard.
+- **Swipe left** from Home → All Apps without forcing the keyboard open.
+- **Swipe right** from Home → Settings.
+- **Swipe up** from Home → the configured quick-launch app.
+- **Swipe down** from Home → All Apps with search focused.
+- **Long-press a Home row** → change, rename, move, or clear that slot.
+- **Long-press an All Apps row** → add to Home, hide, open App info, or request uninstall.
+- **Tap weather** → grant coarse location permission or refresh.
+- **Back** from a side page → Home.
 
-## Design system
+## Customization
 
-The visual system is intentionally monochrome and uses Android system fonts so there is no bundled font payload or font-loading work.
+Settings stays text-only and scrollable. Tapping a row cycles a small preset or toggles the option.
 
-| Role | Typeface | Size | Tone |
-| --- | --- | ---: | --- |
-| Time | sans-serif-light | 62sp | 96% white |
-| Titles | sans-serif | 20sp | 96% white |
-| App names | sans-serif | 19sp | 96% white |
-| Date | sans-serif-medium | 13sp | 72% white |
-| Metadata | sans-serif | 13sp | 72% white |
-| Section labels | sans-serif-medium | 11sp | 46% white |
+### Home
+- Visible apps: 1–8.
+- Position: Top / Center / Bottom.
+- Density: Compact / Normal / Spacious.
+- Text size: Small / Medium / Large.
+- Persistent per-slot app assignment.
+- Per-app aliases on Home.
+- Move Home slots up/down or clear them.
 
-Core layout uses a 24dp horizontal gutter, 54dp app rows, 12dp corners, subtle 14% white dividers, and a pure `#000000` background. Tokens live in `DesignTokens.java`; avoid one-off colors, type sizes, or spacing outside that file.
+### Status
+- Toggle Time / Date / Weather / Battery independently.
+- Status layout: Time first / Date first / Compact.
+- Time format: System / 24h / 12h.
+- Date style: Weekday / Short / Numeric.
+- Weather detail: Both / Temperature / Condition.
+- Battery detail: Both / Icon / Percent.
+
+### Interaction
+- Quick-launch app for swipe up.
+- Animation: Instant / Fast / Normal.
+- Long-press haptics: On / Off.
+- Hidden-app manager.
+- JSON configuration export/import through Android's document picker. No storage permission, account, database, or cloud service is required.
+
+## Search
+
+Search remains a compact O(n) pass performed only when the query changes.
+
+Ranking is deterministic:
+
+1. canonical app-name prefix
+2. alias prefix
+3. canonical app-name substring
+4. alias substring
+
+Aliases affect Home and search ranking; All Apps still shows the application's canonical label.
+
+Hidden apps are excluded from All Apps/search only. Existing Home slots and quick-launch assignments can still launch a hidden app.
+
+## Strict black / white design
+
+The production visual system uses only:
+
+```text
+#000000
+#FFFFFF
+```
+
+There are no alpha-gray hierarchy tokens, gradients, blur, shadows, wallpapers, or decorative animation. Hierarchy comes from:
+
+- system font family/weight
+- text size
+- spacing
+- geometry
+- outlines/dividers
+- placement
+
+The launcher uses Android system fonts only:
+
+| Role | Typeface | Default size |
+| --- | --- | ---: |
+| Time | sans-serif-light | 62sp |
+| App names | sans-serif | 19sp |
+| Date | sans-serif-medium | 13sp |
+| Metadata | sans-serif | 13sp |
+| Section labels | sans-serif-medium | 11sp |
+
+Home app text size and row density can be changed with discrete presets.
 
 ## Performance model
 
-The launcher is designed so the UI thread is almost idle when the screen is not moving.
+The UI thread should be almost idle while Home is not moving.
 
-- Paints, typefaces, date formatters, normalized app labels, and status strings are cached instead of recreated inside `onDraw()`.
-- App discovery/sorting and weather network work run on dedicated background executors.
-- All Apps draws only rows intersecting the visible viewport instead of iterating/drawing the full app list.
-- Horizontal page motion and fling scrolling invalidate on display frames with `postInvalidateOnAnimation()`.
-- There is no continuous animation loop, blur, shadow pipeline, image decoding, icon rasterization, or third-party UI framework.
-- Search filtering is a single linear pass over cached lowercase labels.
-- Weather is rate-limited by a 20-minute cache and has 4-second connect/read timeouts.
-- Package visibility uses a launcher-intent `<queries>` declaration rather than `QUERY_ALL_PACKAGES`.
+- Paints and Typefaces are created once.
+- Major pixel geometry and hit regions are cached when size, insets, or UI configuration changes.
+- Frequently measured status strings are cached when their underlying state changes.
+- Saved app components use an O(1) lookup map.
+- App discovery, labels, and sorting run on a dedicated background executor.
+- Weather location/network work runs off the UI thread.
+- All Apps and Settings draw only visible rows.
+- Page movement and flings invalidate only while motion is active.
+- There is no idle animation/frame loop.
+- No app-icon decoding/rasterization pipeline exists.
+- Release builds enable R8 optimization and resource shrinking.
+- Package visibility is scoped to MAIN/LAUNCHER activities rather than `QUERY_ALL_PACKAGES`.
 
-Actual frame rate still depends on the device, refresh rate, thermal state, and Android compositor. Use a real device plus Perfetto/System Trace or Macrobenchmark when making future rendering changes instead of assuming a fixed FPS from code inspection alone.
+Actual FPS depends on the device, display refresh rate, compositor, and thermal state. The repository includes a separate Macrobenchmark module for physical-device startup/frame measurements; see **[docs/BENCHMARK.md](docs/BENCHMARK.md)**.
 
-## Navigation
+## Android 15+
 
-- Swipe left from Home → All Apps.
-- Swipe right from Home → Settings.
-- Swipe horizontally back toward Home from either side page.
-- Long-press a Home app row → choose the app for that exact slot.
-- Swipe up on Home → open the quick-launch app selected in Settings.
-- Settings → choose how many Home app rows are visible (1–8) and choose the swipe-up app.
-- Type in the bottom search field on All Apps.
-- Tap the weather status on Home to grant coarse location permission or force a refresh.
-- Back from a side page → Home.
+The launcher keeps edge-to-edge/fullscreen setup compatible with the Android 15+ startup path used by the current project: the content view is installed first, then status-bar hiding/system-UI behavior is applied.
+
+The system status/notification bar remains hidden while VS Launcher is active. The navigation bar is not forcibly removed.
 
 ## Weather and privacy
 
-Weather uses the Open-Meteo forecast API. VS Launcher requests only Android coarse location, rounds coordinates to two decimal places before sending them, stores only temperature/weather code/update time in local app preferences, and does not retain coordinates.
+Weather uses Open-Meteo and Android coarse location.
 
-Weather data is provided by Open-Meteo. Check Open-Meteo's current terms before distributing the launcher for a commercial use case.
+- coordinates are rounded to two decimals before the request
+- coordinates are not persisted
+- only temperature, weather code, and update time are cached
+- weather cache TTL: 20 minutes
+- stale last-known locations older than 30 minutes are rejected
+- connect/read timeouts: 4 seconds
 
 ## Build and install
 
-The Android device itself needs **no extra framework or runtime**. The APK contains the launcher code and native vector/adaptive icon resources; Android 8.0 / API 26+ is the runtime.
+The Android device needs no Java, Gradle, Android Studio, Node.js, Flutter, React Native, Compose runtime, SVG runtime, or weather SDK.
 
-### Easiest: GitHub Actions
+Minimum runtime: **Android 8.0 / API 26**.
 
-Open **Actions → Android CI → Run workflow**. A successful run publishes a downloadable **vs-launcher-debug-apk** artifact containing the installable APK.
+### GitHub Actions
 
-### Local build
+Open **Actions → Android CI → Run workflow**. A successful run publishes the `vs-launcher-debug-apk` artifact.
+
+### Local debug APK
 
 Build-machine requirements:
 
 - JDK 17
-- Android SDK 35 + Build Tools 35.0.0
-- Gradle 8.7 or Android Studio
+- Android SDK 35
+- Build Tools 35.0.0
+- Gradle 8.7
 
-From the repository root:
+Run:
 
 ```sh
 bash scripts/build-debug-apk.sh
@@ -92,18 +150,32 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.3.0-debug.apk
+dist/VS-Launcher-0.4.0-debug.apk
 ```
 
-For exact sideload steps, ADB installation, persistent release signing, CI debug-key caveats, and the SVG/adaptive-icon workflow, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
+For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
 
 ## Architecture
 
 ```text
 MainActivity
-├── LauncherSurface   frame-synced drawing, gestures, hit testing
-├── AppRepository     background app discovery, sort, search source
-└── WeatherService    location, cache, network, weather mapping
+├── LauncherSurface       Canvas rendering, motion, hit testing
+├── LauncherPreferences   typed persisted configuration + JSON portability
+├── LauncherUiConfig      immutable render/interaction snapshot
+├── AppRepository         background app discovery + ranked search
+└── WeatherService        coarse location, cache, network, weather mapping
+
+macrobenchmark/           physical-device performance tests only
 ```
 
-The project intentionally stays small and dependency-free. New features should preserve three invariants: no blocking I/O on the UI thread, no avoidable allocation in the draw path, and no continuous work while the launcher is idle.
+The normal production APK remains intentionally framework-free. AndroidX benchmark/profile tooling is isolated to the special benchmark variant/test module and is not part of the normal debug/release launcher runtime.
+
+## Project invariants
+
+Future changes should preserve:
+
+1. no blocking I/O on the UI thread
+2. no avoidable allocation in the per-frame draw path
+3. no continuous work while the launcher is idle
+4. no production dependency merely for decoration
+5. Home remains black, white, text-first, and visually quiet
