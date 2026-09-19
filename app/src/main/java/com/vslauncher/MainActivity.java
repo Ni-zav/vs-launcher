@@ -31,7 +31,12 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -52,6 +57,8 @@ import java.util.TimeZone;
  */
 public final class MainActivity extends Activity implements LauncherSurface.Host {
     private static final int REQUEST_COARSE_LOCATION = 41;
+    private static final int REQUEST_EXPORT_CONFIG = 52;
+    private static final int REQUEST_IMPORT_CONFIG = 53;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat dateFormat =
@@ -959,11 +966,66 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void exportConfiguration() {
-        // Implemented in the dedicated import/export slice.
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "vs-launcher-config.json");
+        startActivityForResult(intent, REQUEST_EXPORT_CONFIG);
     }
 
     private void importConfiguration() {
-        // Implemented in the dedicated import/export slice.
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json");
+        startActivityForResult(intent, REQUEST_IMPORT_CONFIG);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+
+        Uri uri = data.getData();
+        if (requestCode == REQUEST_EXPORT_CONFIG) {
+            writeConfiguration(uri);
+        } else if (requestCode == REQUEST_IMPORT_CONFIG) {
+            readConfiguration(uri);
+        }
+    }
+
+    private void writeConfiguration(Uri uri) {
+        try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+            if (output == null) throw new IllegalStateException("Unable to open destination");
+            output.write(launcherPreferences.exportJson().getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            Toast.makeText(this, "Configuration exported", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void readConfiguration(Uri uri) {
+        try (BufferedInputStream input = new BufferedInputStream(
+                getContentResolver().openInputStream(uri)
+        ); ByteArrayOutputStream output = new ByteArrayOutputStream(4096)) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > 256 * 1024) {
+                    throw new IllegalArgumentException("Configuration is too large");
+                }
+                output.write(buffer, 0, count);
+            }
+
+            launcherPreferences.importJson(
+                    new String(output.toByteArray(), StandardCharsets.UTF_8)
+            );
+            applyUiConfiguration();
+            refreshVisibleApps();
+            resolveLauncherConfiguration();
+            Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private int dp(float value) {
