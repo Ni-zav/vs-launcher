@@ -2,6 +2,7 @@ package com.vslauncher;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -24,6 +25,7 @@ import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -31,27 +33,34 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.TimeZone;
 
 /**
  * Minimal native launcher shell.
  *
- * UI-thread work is deliberately bounded: Canvas drawing, cached string state and
- * O(visible rows) rendering. App discovery and weather I/O live on background
- * executors.
+ * UI-thread work stays bounded to Canvas drawing, cached strings and visible rows.
+ * App discovery and weather I/O remain on background executors.
  */
 public final class MainActivity extends Activity implements LauncherSurface.Host {
     private static final String PREFS = "launcher_preferences";
-    private static final String UP_ACTION = "up_action";
+    private static final String HOME_MAX = "home_max";
+    private static final String HOME_SLOT_PREFIX = "home_slot_";
+    private static final String QUICK_APP = "quick_app";
+    private static final int DEFAULT_HOME_MAX = 5;
+    private static final int MIN_HOME_MAX = 1;
+    private static final int MAX_HOME_MAX = 8;
     private static final int REQUEST_COARSE_LOCATION = 41;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat dateFormat =
-            new SimpleDateFormat("EEE, d MMM", Locale.getDefault());
+            new SimpleDateFormat("EEEE · d MMM", Locale.getDefault());
     private final SimpleDateFormat timeFormat =
             new SimpleDateFormat("HH:mm", Locale.getDefault());
 
@@ -63,8 +72,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<AppEntry> homeApps = Collections.emptyList();
+    private AppEntry quickApp;
     private String query = "";
     private int bottomInset;
+    private int maxHomeApps = DEFAULT_HOME_MAX;
     private boolean packageReceiverRegistered;
 
     private final Runnable clockTick = new Runnable() {
@@ -94,35 +106,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
+        applyMinimalSystemUi();
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
 
         surface = new LauncherSurface(this, this);
-        surface.setUpAction(
-                getSharedPreferences(PREFS, MODE_PRIVATE).getString(UP_ACTION, "Apps")
-        );
         root.addView(surface, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
 
         root.setOnApplyWindowInsetsListener((view, insets) -> {
-            int top;
             int bottom;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                android.graphics.Insets bars =
-                        insets.getInsets(WindowInsets.Type.systemBars());
+                android.graphics.Insets navigation =
+                        insets.getInsets(WindowInsets.Type.navigationBars());
                 android.graphics.Insets ime =
                         insets.getInsets(WindowInsets.Type.ime());
-                top = bars.top;
-                bottom = Math.max(bars.bottom, ime.bottom);
+                bottom = Math.max(navigation.bottom, ime.bottom);
             } else {
-                top = insets.getSystemWindowInsetTop();
                 bottom = insets.getSystemWindowInsetBottom();
             }
+
             bottomInset = bottom;
-            surface.setInsets(top, bottom);
+            // Status content deliberately owns the top edge; the system status bar is hidden.
+            surface.setInsets(0, bottom);
             updateSearchLayout();
             return insets;
         });
@@ -140,10 +149,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override protected void onResume() {
         super.onResume();
+        applyMinimalSystemUi();
         registerBattery();
         mainHandler.removeCallbacks(clockTick);
         mainHandler.post(clockTick);
         weatherService.publishCacheAndRefresh();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyMinimalSystemUi();
     }
 
     @Override protected void onPause() {
@@ -166,6 +181,30 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
+    private void applyMinimalSystemUi() {
+        getWindow().setStatusBarColor(Color.BLACK);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars());
+                controller.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+            }
+        } else {
+            getWindow().setFlags(
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN
+            );
+            getWindow().getDecorView().setSystemUiVisibility(
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            );
+        }
+    }
+
     private void updateClock() {
         TimeZone zone = TimeZone.getDefault();
         dateFormat.setTimeZone(zone);
@@ -183,7 +222,73 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             apps = loaded;
             filteredApps = AppRepository.filter(apps, query);
             surface.setApps(apps, filteredApps);
+            resolveLauncherConfiguration();
         });
+    }
+
+    private void resolveLauncherConfiguration() {
+        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        maxHomeApps = clamp(
+                preferences.getInt(HOME_MAX, DEFAULT_HOME_MAX),
+                MIN_HOME_MAX,
+                MAX_HOME_MAX
+        );
+
+        ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
+        Set<String> used = new HashSet<>();
+        SharedPreferences.Editor seedEditor = null;
+
+        for (int index = 0; index < maxHomeApps; index++) {
+            String key = HOME_SLOT_PREFIX + index;
+            String componentName = preferences.getString(key, null);
+            AppEntry entry = findApp(componentName);
+
+            if (componentName == null && !preferences.contains(key)) {
+                entry = firstUnusedApp(used);
+                if (entry != null) {
+                    if (seedEditor == null) seedEditor = preferences.edit();
+                    seedEditor.putString(key, entry.component.flattenToString());
+                }
+            }
+
+            resolved.add(entry);
+            if (entry != null) used.add(entry.component.flattenToString());
+        }
+
+        if (seedEditor != null) seedEditor.apply();
+
+        String quickComponent = preferences.getString(QUICK_APP, null);
+        quickApp = findApp(quickComponent);
+        String quickLabel;
+        if (quickApp != null) {
+            quickLabel = quickApp.label;
+        } else if (quickComponent != null) {
+            quickLabel = "Unavailable";
+        } else {
+            quickLabel = "Not set";
+        }
+
+        homeApps = Collections.unmodifiableList(resolved);
+        surface.setHomeConfiguration(homeApps, maxHomeApps, quickLabel);
+    }
+
+    private AppEntry firstUnusedApp(Set<String> used) {
+        for (AppEntry app : apps) {
+            String component = app.component.flattenToString();
+            if (!used.contains(component)) return app;
+        }
+        return null;
+    }
+
+    private AppEntry findApp(String flattenedComponent) {
+        if (flattenedComponent == null || flattenedComponent.isEmpty()) return null;
+        ComponentName component = ComponentName.unflattenFromString(flattenedComponent);
+        if (component == null) return null;
+
+        for (AppEntry app : apps) {
+            if (component.equals(app.component)) return app;
+        }
+        return null;
     }
 
     private void registerPackageChanges() {
@@ -363,6 +468,91 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onOpenApp(AppEntry app) {
+        launchApp(app);
+    }
+
+    @Override public void onHomeSlotLongPressed(int index) {
+        if (index < 0 || index >= maxHomeApps) return;
+        showHomeAppPicker(index);
+    }
+
+    @Override public void onHomeMaxChanged(int requestedMax) {
+        int safeMax = clamp(requestedMax, MIN_HOME_MAX, MAX_HOME_MAX);
+        if (safeMax == maxHomeApps) return;
+
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putInt(HOME_MAX, safeMax)
+                .apply();
+        resolveLauncherConfiguration();
+    }
+
+    @Override public void onQuickAppPickerRequested() {
+        showQuickAppPicker();
+    }
+
+    @Override public void onQuickLaunchRequested() {
+        if (quickApp != null) {
+            launchApp(quickApp);
+        } else {
+            showPage(LauncherSurface.PAGE_SETTINGS);
+        }
+    }
+
+    private void showHomeAppPicker(int slot) {
+        if (apps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[apps.size()];
+        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+
+        new AlertDialog.Builder(this)
+                .setTitle("Home app " + (slot + 1))
+                .setItems(labels, (dialog, which) -> {
+                    AppEntry selected = apps.get(which);
+                    getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .edit()
+                            .putString(
+                                    HOME_SLOT_PREFIX + slot,
+                                    selected.component.flattenToString()
+                            )
+                            .apply();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showQuickAppPicker() {
+        if (apps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[apps.size()];
+        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Swipe-up app")
+                .setItems(labels, (picker, which) -> {
+                    AppEntry selected = apps.get(which);
+                    getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .edit()
+                            .putString(QUICK_APP, selected.component.flattenToString())
+                            .apply();
+                    resolveLauncherConfiguration();
+                })
+                .setNeutralButton("Clear", (picker, which) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .edit()
+                            .remove(QUICK_APP)
+                            .apply();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        dialog.show();
+    }
+
+    private void launchApp(AppEntry app) {
+        if (app == null) return;
+
         Intent intent = new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LAUNCHER)
                 .setComponent(app.component)
@@ -375,13 +565,6 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
-    @Override public void onUpActionSelected(String action) {
-        String safeAction = "Settings".equals(action) ? "Settings" : "Apps";
-        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
-        preferences.edit().putString(UP_ACTION, safeAction).apply();
-        surface.setUpAction(safeAction);
-    }
-
     @Override public void onWeatherTapped() {
         if (!weatherService.hasLocationPermission()) {
             requestPermissions(
@@ -391,7 +574,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             return;
         }
 
-        surface.setWeather("Weather · updating");
+        surface.setWeather("Updating weather…");
         weatherService.refreshNow();
     }
 
@@ -404,14 +587,18 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (requestCode != REQUEST_COARSE_LOCATION) return;
 
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            surface.setWeather("Weather · updating");
+            surface.setWeather("Updating weather…");
             weatherService.refreshNow();
         } else {
-            surface.setWeather("Weather · location permission");
+            surface.setWeather("Weather needs location");
         }
     }
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

@@ -24,9 +24,7 @@ On GitHub:
 2. Open **Actions**.
 3. Open **Android CI**.
 4. Click **Run workflow**.
-5. Select the branch you want to build.
-   - while PR #1 is under development: `feat/minimal-performance-redesign`
-   - after it is merged: `main`
+5. Select the branch you want to build. For the normal installable build, use `main`.
 6. Click **Run workflow**.
 
 The workflow installs its own JDK/Android SDK/Gradle environment on GitHub's runner and runs:
@@ -50,7 +48,7 @@ After the workflow is green:
 Inside it is:
 
 ```text
-VS-Launcher-0.2.0-debug.apk
+VS-Launcher-0.3.0-debug.apk
 ```
 
 The artifact is retained for 14 days.
@@ -144,7 +142,7 @@ The script:
 Output:
 
 ```text
-dist/VS-Launcher-0.2.0-debug.apk
+dist/VS-Launcher-0.3.0-debug.apk
 ```
 
 The raw Android Gradle output also remains at:
@@ -158,14 +156,14 @@ app/build/outputs/apk/debug/app-debug.apk
 Enable Developer Options + USB debugging on the phone, connect it, then:
 
 ```sh
-adb install -r dist/VS-Launcher-0.2.0-debug.apk
+adb install -r dist/VS-Launcher-0.3.0-debug.apk
 ```
 
 If the installed copy was signed with a different key, uninstall it first:
 
 ```sh
 adb uninstall com.vslauncher
-adb install dist/VS-Launcher-0.2.0-debug.apk
+adb install dist/VS-Launcher-0.3.0-debug.apk
 ```
 
 Then press Home and select VS Launcher.
@@ -238,7 +236,7 @@ mkdir -p dist
 "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
   -f -p 4 \
   app/build/outputs/apk/release/app-release-unsigned.apk \
-  dist/VS-Launcher-0.2.0-aligned.apk
+  dist/VS-Launcher-0.3.0-aligned.apk
 ```
 
 If your SDK uses `ANDROID_SDK_ROOT` instead:
@@ -253,8 +251,8 @@ If your SDK uses `ANDROID_SDK_ROOT` instead:
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
   --ks vs-launcher-release.jks \
   --ks-key-alias vslauncher \
-  --out dist/VS-Launcher-0.2.0.apk \
-  dist/VS-Launcher-0.2.0-aligned.apk
+  --out dist/VS-Launcher-0.3.0.apk \
+  dist/VS-Launcher-0.3.0-aligned.apk
 ```
 
 Leave the password options off the command line so `apksigner` can prompt you instead of placing passwords in shell history.
@@ -265,19 +263,19 @@ Leave the password options off the command line so `apksigner` can prompt you in
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
   --verbose \
   --print-certs \
-  dist/VS-Launcher-0.2.0.apk
+  dist/VS-Launcher-0.3.0.apk
 ```
 
 The installable release APK is now:
 
 ```text
-dist/VS-Launcher-0.2.0.apk
+dist/VS-Launcher-0.3.0.apk
 ```
 
 Install it by opening it on the phone or with:
 
 ```sh
-adb install -r dist/VS-Launcher-0.2.0.apk
+adb install -r dist/VS-Launcher-0.3.0.apk
 ```
 
 Every future release that should update this installation must be signed with the same `vs-launcher-release.jks`.
@@ -395,12 +393,13 @@ For APK installation on newer certified Android devices, Android's developer-ver
 After installing:
 
 1. Press Home and make VS Launcher the Home app.
-2. Confirm the black background and white VS icon appear correctly.
-3. Confirm date/time and battery state.
-4. Swipe left to All Apps.
-5. Search for and launch an installed app.
-6. Swipe right to Settings.
-7. Tap weather on Home and grant coarse location if desired.
-8. Reboot once and confirm VS Launcher remains selectable as the Home app.
+2. Confirm the true-black launcher fills the top edge with no persistent status/notification bar.
+3. Confirm the custom time/date, weather status, and battery indicator render correctly.
+4. Long-press a Home app row, select a different app, and confirm the slot persists.
+5. Swipe right to Settings, change **Visible apps**, and choose a **Swipe up** app.
+6. Return Home and swipe up; the selected quick app should open directly.
+7. Swipe left to All Apps, search for an installed app, and launch it.
+8. Tap weather on Home and grant coarse location if desired.
+9. Reboot once and confirm Home slots, max visible count, and quick-launch app persist.
 
 For performance validation on a target device, use Android Perfetto/System Trace rather than inferring FPS from the source code.

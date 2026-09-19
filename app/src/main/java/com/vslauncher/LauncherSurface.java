@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -23,7 +24,10 @@ final class LauncherSurface extends View {
     interface Host {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
-        void onUpActionSelected(String action);
+        void onHomeSlotLongPressed(int index);
+        void onHomeMaxChanged(int max);
+        void onQuickAppPickerRequested();
+        void onQuickLaunchRequested();
         void onWeatherTapped();
     }
 
@@ -32,33 +36,43 @@ final class LauncherSurface extends View {
     private static final int GESTURE_VERTICAL = 2;
 
     private final Host host;
-    private final Paint datePaint = textPaint(DesignTokens.DATE_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
-    private final Paint timePaint = textPaint(DesignTokens.TIME_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.DISPLAY);
-    private final Paint metaPaint = textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
-    private final Paint labelPaint = textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
-    private final Paint appPaint = textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
-    private final Paint titlePaint = textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
+    private final Paint datePaint =
+            textPaint(DesignTokens.DATE_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.LABEL);
+    private final Paint timePaint =
+            textPaint(DesignTokens.TIME_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.DISPLAY);
+    private final Paint metaPaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
+    private final Paint labelPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint appPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
+    private final Paint titlePaint =
+            textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
     private final Paint primaryFillPaint = fillPaint(DesignTokens.TEXT_PRIMARY);
     private final Paint batteryStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint statusStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private final OverScroller scroller;
     private final int touchSlop;
     private final int minFlingVelocity;
     private final int maxFlingVelocity;
+    private final int longPressTimeout;
 
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<AppEntry> homeApps = Collections.emptyList();
 
     private String dateText = "";
     private String timeText = "";
     private String weatherText = "Weather · tap to enable";
     private String batteryText = "—";
-    private String upAction = "Apps";
+    private String quickAppLabel = "Not set";
 
     private int batteryLevel = -1;
     private boolean charging;
+    private int maxHomeApps = 5;
     private int page = PAGE_HOME;
     private int topInset;
     private int bottomInset;
@@ -71,6 +85,9 @@ final class LauncherSurface extends View {
     private int gestureMode = GESTURE_NONE;
     private VelocityTracker velocityTracker;
 
+    private int pressedHomeIndex = -1;
+    private boolean longPressTriggered;
+
     private ValueAnimator pageAnimator;
     private ValueAnimator settleAnimator;
     private int transitionFrom = PAGE_HOME;
@@ -79,11 +96,27 @@ final class LauncherSurface extends View {
     private float transitionOldEnd;
     private boolean transitionRunning;
 
+    private final Runnable longPressRunnable = new Runnable() {
+        @Override public void run() {
+            if (pressedHomeIndex < 0
+                    || page != PAGE_HOME
+                    || gestureMode != GESTURE_NONE
+                    || transitionRunning) {
+                return;
+            }
+
+            longPressTriggered = true;
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            host.onHomeSlotLongPressed(pressedHomeIndex);
+        }
+    };
+
     LauncherSurface(Context context, Host host) {
         super(context);
         this.host = host;
         setFocusable(true);
         setClickable(true);
+        setLongClickable(true);
         setContentDescription("VS Launcher");
         setBackgroundColor(DesignTokens.BLACK);
 
@@ -91,11 +124,17 @@ final class LauncherSurface extends View {
         touchSlop = config.getScaledTouchSlop();
         minFlingVelocity = config.getScaledMinimumFlingVelocity();
         maxFlingVelocity = config.getScaledMaximumFlingVelocity();
+        longPressTimeout = ViewConfiguration.getLongPressTimeout();
         scroller = new OverScroller(context);
 
         batteryStrokePaint.setStyle(Paint.Style.STROKE);
-        batteryStrokePaint.setStrokeWidth(dp(1f));
+        batteryStrokePaint.setStrokeWidth(dp(1.2f));
+        batteryStrokePaint.setStrokeCap(Paint.Cap.ROUND);
         batteryStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
+
+        statusStrokePaint.setStyle(Paint.Style.STROKE);
+        statusStrokePaint.setStrokeWidth(dp(1.2f));
+        statusStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
     }
 
     private Paint textPaint(float sp, int color, android.graphics.Typeface typeface) {
@@ -130,7 +169,7 @@ final class LauncherSurface extends View {
     void setBattery(int level, boolean isCharging) {
         batteryLevel = level;
         charging = isCharging;
-        batteryText = level < 0 ? "—" : level + "%" + (isCharging ? " · charging" : "");
+        batteryText = level < 0 ? "—" : level + "%";
         invalidateHome();
     }
 
@@ -153,9 +192,11 @@ final class LauncherSurface extends View {
         if (page == PAGE_APPS) invalidate();
     }
 
-    void setUpAction(String action) {
-        upAction = "Settings".equals(action) ? "Settings" : "Apps";
-        if (page == PAGE_SETTINGS) invalidate();
+    void setHomeConfiguration(List<AppEntry> home, int max, String quickLabel) {
+        homeApps = home == null ? Collections.emptyList() : home;
+        maxHomeApps = Math.max(1, Math.min(8, max));
+        quickAppLabel = quickLabel == null ? "Not set" : quickLabel;
+        invalidate();
     }
 
     int getPage() {
@@ -168,6 +209,7 @@ final class LauncherSurface extends View {
             return;
         }
 
+        cancelPendingLongPress();
         cancelPageAnimator();
         if (settleAnimator != null) {
             settleAnimator.cancel();
@@ -218,7 +260,9 @@ final class LauncherSurface extends View {
     }
 
     private void invalidateHome() {
-        if (page == PAGE_HOME || transitionFrom == PAGE_HOME || transitionTo == PAGE_HOME) invalidate();
+        if (page == PAGE_HOME || transitionFrom == PAGE_HOME || transitionTo == PAGE_HOME) {
+            invalidate();
+        }
     }
 
     @Override protected void onDraw(Canvas canvas) {
@@ -235,7 +279,8 @@ final class LauncherSurface extends View {
             int neighbor = neighborForDrag(dragOffsetX);
             if (neighbor != Integer.MIN_VALUE) {
                 drawPage(canvas, page, dragOffsetX);
-                float neighborOffset = dragOffsetX + (dragOffsetX > 0f ? -getWidth() : getWidth());
+                float neighborOffset =
+                        dragOffsetX + (dragOffsetX > 0f ? -getWidth() : getWidth());
                 drawPage(canvas, neighbor, neighborOffset);
             } else {
                 drawPage(canvas, page, dragOffsetX * 0.18f);
@@ -249,14 +294,18 @@ final class LauncherSurface extends View {
     private void drawPage(Canvas canvas, int targetPage, float offsetX) {
         int save = canvas.save();
         canvas.translate(offsetX, 0f);
-        if (targetPage == PAGE_HOME) drawHome(canvas);
-        else if (targetPage == PAGE_APPS) drawApps(canvas);
-        else drawSettings(canvas);
+        if (targetPage == PAGE_HOME) {
+            drawHome(canvas);
+        } else if (targetPage == PAGE_APPS) {
+            drawApps(canvas);
+        } else {
+            drawSettings(canvas);
+        }
         canvas.restoreToCount(save);
     }
 
     private float contentTop() {
-        return topInset + dp(24f);
+        return topInset + dp(28f);
     }
 
     private float left() {
@@ -265,47 +314,100 @@ final class LauncherSurface extends View {
 
     private void drawHome(Canvas canvas) {
         float x = left();
+        float right = getWidth() - x;
         float top = contentTop();
 
-        canvas.drawText(dateText, x, top + sp(DesignTokens.DATE_SP), datePaint);
-        canvas.drawText(timeText, x, top + dp(68f), timePaint);
+        canvas.drawText(timeText, x, top + dp(58f), timePaint);
+        canvas.drawText(dateText, x, top + dp(88f), datePaint);
 
-        float metaY = top + dp(100f);
-        float batteryX = x;
-        drawBattery(canvas, batteryX, metaY - dp(10f));
+        float statusBaseline = top + dp(126f);
+        float weatherCenterX = x + dp(5f);
+        float weatherCenterY = statusBaseline - dp(4f);
 
-        canvas.drawText(batteryText, batteryX + dp(38f), metaY, metaPaint);
-        canvas.drawText(weatherText, x, metaY + dp(30f), metaPaint);
+        canvas.drawCircle(weatherCenterX, weatherCenterY, dp(4.5f), statusStrokePaint);
+        canvas.drawCircle(weatherCenterX, weatherCenterY, dp(1.5f), primaryFillPaint);
+        canvas.drawText(weatherText, x + dp(18f), statusBaseline, metaPaint);
 
-        float labelY = top + dp(193f);
-        canvas.drawText("HOME", x, labelY, labelPaint);
+        float batteryTextWidth = metaPaint.measureText(batteryText);
+        float batteryTextX = right - batteryTextWidth;
+        float batteryX = batteryTextX - dp(34f);
+        drawBattery(canvas, batteryX, statusBaseline - dp(11f));
+        canvas.drawText(batteryText, batteryTextX, statusBaseline, metaPaint);
 
-        float listY = top + dp(230f);
-        float hintY = getHeight() - bottomInset - dp(26f);
-        int possibleRows = Math.max(0, (int) ((hintY - listY - dp(20f)) / dp(DesignTokens.ROW_HEIGHT_DP)));
-        int homeRows = Math.min(8, Math.min(possibleRows, apps.size()));
-        drawAppRows(canvas, apps, x, listY, homeRows, 0f, hintY - dp(18f));
+        float dividerY = top + dp(153f);
+        canvas.drawRect(x, dividerY, right, dividerY + dp(1f), dividerPaint);
 
-        canvas.drawText("swipe · settings  /  apps", x, hintY, metaPaint);
+        drawHomeRows(canvas, homeListStart(), visibleHomeRows());
+    }
+
+    private void drawHomeRows(Canvas canvas, float startY, int count) {
+        if (count <= 0) return;
+
+        float x = left();
+        float right = getWidth() - x;
+        float rowHeight = dp(DesignTokens.ROW_HEIGHT_DP);
+        float baselineOffset = dp(31f);
+
+        for (int index = 0; index < count; index++) {
+            float rowTop = startY + index * rowHeight;
+            AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
+
+            if (app != null) {
+                canvas.drawText(app.label, x, rowTop + baselineOffset, appPaint);
+            } else {
+                canvas.drawText("Hold to choose app", x, rowTop + baselineOffset, metaPaint);
+            }
+
+            canvas.drawRect(
+                    x,
+                    rowTop + rowHeight - dp(1f),
+                    right,
+                    rowTop + rowHeight,
+                    dividerPaint
+            );
+        }
     }
 
     private void drawBattery(Canvas canvas, float x, float y) {
-        float width = dp(28f);
-        float height = dp(12f);
+        float width = dp(24f);
+        float height = dp(10f);
         float radius = dp(3f);
 
         rect.set(x, y, x + width, y + height);
         canvas.drawRoundRect(rect, radius, radius, batteryStrokePaint);
-        rect.set(x + width + dp(2f), y + dp(3f), x + width + dp(4f), y + height - dp(3f));
+
+        rect.set(
+                x + width + dp(2f),
+                y + dp(2.5f),
+                x + width + dp(4f),
+                y + height - dp(2.5f)
+        );
         canvas.drawRoundRect(rect, dp(1f), dp(1f), primaryFillPaint);
 
         if (batteryLevel >= 0) {
             float innerWidth = width - dp(4f);
             float fill = innerWidth * clamp(batteryLevel / 100f, 0f, 1f);
             if (fill > 0f) {
-                rect.set(x + dp(2f), y + dp(2f), x + dp(2f) + fill, y + height - dp(2f));
-                canvas.drawRoundRect(rect, dp(1.5f), dp(1.5f), primaryFillPaint);
+                rect.set(
+                        x + dp(2f),
+                        y + dp(2f),
+                        x + dp(2f) + fill,
+                        y + height - dp(2f)
+                );
+                canvas.drawRoundRect(
+                        rect,
+                        dp(1.5f),
+                        dp(1.5f),
+                        primaryFillPaint
+                );
             }
+        }
+
+        if (charging) {
+            float cx = x - dp(7f);
+            float cy = y + height / 2f;
+            canvas.drawLine(cx - dp(2f), cy, cx + dp(2f), cy, statusStrokePaint);
+            canvas.drawLine(cx, cy - dp(2f), cx, cy + dp(2f), statusStrokePaint);
         }
     }
 
@@ -367,36 +469,49 @@ final class LauncherSurface extends View {
 
     private void drawSettings(Canvas canvas) {
         float x = left();
+        float right = getWidth() - x;
         float top = contentTop();
 
         canvas.drawText("SETTINGS", x, top + sp(DesignTokens.LABEL_SP), labelPaint);
-        canvas.drawText("Swipe up", x, top + dp(70f), titlePaint);
-        canvas.drawText("Choose the home-screen shortcut", x, top + dp(98f), metaPaint);
 
-        drawSettingRow(canvas, "Apps", "Open all apps", top + dp(126f), "Apps".equals(upAction));
-        drawSettingRow(canvas, "Settings", "Open launcher settings", top + dp(190f), "Settings".equals(upAction));
+        canvas.drawText("HOME", x, top + dp(58f), labelPaint);
+        drawMaxHomeRow(canvas, settingsMaxRowTop(), x, right);
 
-        canvas.drawText("Weather", x, top + dp(304f), titlePaint);
-        canvas.drawText("Coarse location · cached for 20 min", x, top + dp(332f), metaPaint);
-        canvas.drawText("Weather data · Open-Meteo", x, top + dp(356f), metaPaint);
-        canvas.drawText("Tap weather on Home to refresh or enable.", x, top + dp(380f), metaPaint);
+        canvas.drawText("QUICK LAUNCH", x, top + dp(181f), labelPaint);
+        drawQuickLaunchRow(canvas, settingsQuickRowTop(), x, right);
     }
 
-    private void drawSettingRow(Canvas canvas, String value, String subtitle, float y, boolean selected) {
-        float x = left();
-        float right = getWidth() - x;
-        rect.set(x, y, right, y + dp(54f));
-        if (selected) canvas.drawRoundRect(rect, dp(DesignTokens.CORNER_DP), dp(DesignTokens.CORNER_DP), surfacePaint);
+    private void drawMaxHomeRow(Canvas canvas, float y, float x, float right) {
+        float height = dp(62f);
+        canvas.drawText("Visible apps", x, y + dp(25f), appPaint);
+        canvas.drawText("Maximum shown on Home", x, y + dp(47f), metaPaint);
 
-        canvas.drawText(value, x + dp(14f), y + dp(23f), appPaint);
-        canvas.drawText(subtitle, x + dp(14f), y + dp(43f), metaPaint);
+        float plusX = right - dp(9f);
+        float countX = right - dp(47f);
+        float minusX = right - dp(87f);
+        float baseline = y + dp(34f);
 
-        float cx = right - dp(18f);
-        float cy = y + dp(27f);
-        batteryStrokePaint.setColor(selected ? DesignTokens.TEXT_PRIMARY : DesignTokens.TEXT_TERTIARY);
-        canvas.drawCircle(cx, cy, dp(6f), batteryStrokePaint);
-        if (selected) canvas.drawCircle(cx, cy, dp(3f), primaryFillPaint);
-        batteryStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
+        canvas.drawText("−", minusX - appPaint.measureText("−") / 2f, baseline, appPaint);
+        String count = Integer.toString(maxHomeApps);
+        canvas.drawText(count, countX - appPaint.measureText(count) / 2f, baseline, titlePaint);
+        canvas.drawText("+", plusX - appPaint.measureText("+") / 2f, baseline, appPaint);
+
+        canvas.drawRect(x, y + height - dp(1f), right, y + height, dividerPaint);
+    }
+
+    private void drawQuickLaunchRow(Canvas canvas, float y, float x, float right) {
+        float height = dp(66f);
+        rect.set(x, y, right, y + height);
+        canvas.drawRoundRect(
+                rect,
+                dp(DesignTokens.CORNER_DP),
+                dp(DesignTokens.CORNER_DP),
+                surfacePaint
+        );
+
+        canvas.drawText("Swipe up", x + dp(14f), y + dp(26f), appPaint);
+        canvas.drawText(quickAppLabel, x + dp(14f), y + dp(49f), metaPaint);
+        canvas.drawText("›", right - dp(22f), y + dp(39f), titlePaint);
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
@@ -411,20 +526,34 @@ final class LauncherSurface extends View {
                     settleAnimator = null;
                 }
                 if (!scroller.isFinished()) scroller.abortAnimation();
+
                 recycleVelocityTracker();
                 velocityTracker = VelocityTracker.obtain();
                 velocityTracker.addMovement(event);
+
                 downX = event.getX();
                 downY = event.getY();
                 lastY = downY;
                 dragOffsetX = 0f;
                 gestureMode = GESTURE_NONE;
+                longPressTriggered = false;
+
+                pressedHomeIndex = page == PAGE_HOME
+                        ? homeIndexAt(downX, downY)
+                        : -1;
+                if (pressedHomeIndex >= 0) {
+                    postDelayed(longPressRunnable, longPressTimeout);
+                }
                 return true;
 
             case MotionEvent.ACTION_MOVE:
                 if (velocityTracker != null) velocityTracker.addMovement(event);
+
                 float totalDx = event.getX() - downX;
                 float totalDy = event.getY() - downY;
+                if (Math.max(Math.abs(totalDx), Math.abs(totalDy)) > touchSlop) {
+                    cancelPendingLongPress();
+                }
 
                 if (gestureMode == GESTURE_NONE
                         && Math.max(Math.abs(totalDx), Math.abs(totalDy)) > touchSlop) {
@@ -435,7 +564,9 @@ final class LauncherSurface extends View {
 
                 if (gestureMode == GESTURE_HORIZONTAL) {
                     dragOffsetX = totalDx;
-                    if (neighborForDrag(dragOffsetX) == Integer.MIN_VALUE) dragOffsetX *= 0.22f;
+                    if (neighborForDrag(dragOffsetX) == Integer.MIN_VALUE) {
+                        dragOffsetX *= 0.22f;
+                    }
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
                     float dy = event.getY() - lastY;
@@ -447,6 +578,8 @@ final class LauncherSurface extends View {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                cancelPendingLongPress();
+
                 if (velocityTracker != null) velocityTracker.addMovement(event);
                 float velocityX = 0f;
                 float velocityY = 0f;
@@ -456,7 +589,9 @@ final class LauncherSurface extends View {
                     velocityY = velocityTracker.getYVelocity();
                 }
 
-                if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                if (longPressTriggered) {
+                    // The long press already opened its picker; never also launch the app.
+                } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     settleDrag();
                 } else if (gestureMode == GESTURE_HORIZONTAL) {
                     finishHorizontalGesture(velocityX);
@@ -469,6 +604,7 @@ final class LauncherSurface extends View {
 
                 recycleVelocityTracker();
                 gestureMode = GESTURE_NONE;
+                pressedHomeIndex = -1;
                 return true;
 
             default:
@@ -534,9 +670,11 @@ final class LauncherSurface extends View {
             return;
         }
 
+        if (page != PAGE_HOME) return;
+
         float dy = event.getY() - downY;
         if (dy < -dp(64f) && Math.abs(dy) > Math.abs(event.getX() - downX)) {
-            host.onPageRequested("Settings".equals(upAction) ? PAGE_SETTINGS : PAGE_APPS);
+            host.onQuickLaunchRequested();
         }
     }
 
@@ -561,23 +699,16 @@ final class LauncherSurface extends View {
         float top = contentTop();
 
         if (page == PAGE_HOME) {
-            if (y >= top + dp(108f) && y <= top + dp(154f)) {
+            if (y >= top + dp(101f) && y <= top + dp(143f)) {
                 host.onWeatherTapped();
                 return;
             }
 
-            float start = top + dp(230f);
-            float hintY = getHeight() - bottomInset - dp(26f);
-            int possibleRows = Math.max(
-                    0,
-                    (int) ((hintY - start - dp(20f)) / dp(DesignTokens.ROW_HEIGHT_DP))
-            );
-            int visibleRows = Math.min(8, Math.min(possibleRows, apps.size()));
-            float rowHeight = dp(DesignTokens.ROW_HEIGHT_DP);
-            if (y < start || y >= start + visibleRows * rowHeight) return;
-
-            int index = (int) ((y - start) / rowHeight);
-            if (index >= 0 && index < visibleRows) host.onOpenApp(apps.get(index));
+            int index = homeIndexAt(x, y);
+            if (index >= 0 && index < homeApps.size()) {
+                AppEntry app = homeApps.get(index);
+                if (app != null) host.onOpenApp(app);
+            }
             return;
         }
 
@@ -588,15 +719,57 @@ final class LauncherSurface extends View {
 
             float start = viewportTop - appScroll;
             int index = (int) ((y - start) / dp(DesignTokens.ROW_HEIGHT_DP));
-            if (index >= 0 && index < filteredApps.size()) host.onOpenApp(filteredApps.get(index));
+            if (index >= 0 && index < filteredApps.size()) {
+                host.onOpenApp(filteredApps.get(index));
+            }
             return;
         }
 
-        if (y >= top + dp(126f) && y <= top + dp(180f)) {
-            host.onUpActionSelected("Apps");
-        } else if (y >= top + dp(190f) && y <= top + dp(244f)) {
-            host.onUpActionSelected("Settings");
+        float maxRowTop = settingsMaxRowTop();
+        if (y >= maxRowTop && y <= maxRowTop + dp(62f)) {
+            float right = getWidth() - left();
+            if (x >= right - dp(112f) && x < right - dp(66f)) {
+                host.onHomeMaxChanged(maxHomeApps - 1);
+            } else if (x >= right - dp(32f)) {
+                host.onHomeMaxChanged(maxHomeApps + 1);
+            }
+            return;
         }
+
+        float quickRowTop = settingsQuickRowTop();
+        if (y >= quickRowTop && y <= quickRowTop + dp(66f)) {
+            host.onQuickAppPickerRequested();
+        }
+    }
+
+    private int homeIndexAt(float x, float y) {
+        float start = homeListStart();
+        float row = dp(DesignTokens.ROW_HEIGHT_DP);
+        int visible = visibleHomeRows();
+
+        if (x < left() || x > getWidth() - left()) return -1;
+        if (y < start || y >= start + visible * row) return -1;
+
+        int index = (int) ((y - start) / row);
+        return index >= 0 && index < visible ? index : -1;
+    }
+
+    private float homeListStart() {
+        return contentTop() + dp(174f);
+    }
+
+    private int visibleHomeRows() {
+        float available = getHeight() - bottomInset - dp(20f) - homeListStart();
+        int fit = Math.max(0, (int) Math.floor(available / dp(DesignTokens.ROW_HEIGHT_DP)));
+        return Math.min(maxHomeApps, fit);
+    }
+
+    private float settingsMaxRowTop() {
+        return contentTop() + dp(72f);
+    }
+
+    private float settingsQuickRowTop() {
+        return contentTop() + dp(198f);
     }
 
     private float maxAppScroll() {
@@ -607,6 +780,11 @@ final class LauncherSurface extends View {
         return Math.max(0f, content - viewport);
     }
 
+    private void cancelPendingLongPress() {
+        removeCallbacks(longPressRunnable);
+        pressedHomeIndex = -1;
+    }
+
     private void recycleVelocityTracker() {
         if (velocityTracker != null) {
             velocityTracker.recycle();
@@ -615,6 +793,7 @@ final class LauncherSurface extends View {
     }
 
     @Override protected void onDetachedFromWindow() {
+        cancelPendingLongPress();
         cancelPageAnimator();
         if (settleAnimator != null) settleAnimator.cancel();
         recycleVelocityTracker();
