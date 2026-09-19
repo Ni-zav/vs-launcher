@@ -104,8 +104,32 @@ final class LauncherPreferences {
 
     void setHomeSlot(int index, String component) {
         SharedPreferences.Editor edit = prefs.edit();
-        if (component == null || component.isEmpty()) edit.remove(HOME_SLOT_PREFIX + index);
+        if (component == null) edit.remove(HOME_SLOT_PREFIX + index);
         else edit.putString(HOME_SLOT_PREFIX + index, component);
+        edit.apply();
+    }
+
+    void clearHomeSlot(int index) {
+        prefs.edit().putString(HOME_SLOT_PREFIX + index, "").apply();
+    }
+
+    void swapHomeSlots(int first, int second) {
+        if (first < 0 || second < 0
+                || first >= MAX_HOME_APPS || second >= MAX_HOME_APPS
+                || first == second) {
+            return;
+        }
+
+        String firstValue = homeSlot(first);
+        String secondValue = homeSlot(second);
+        boolean firstExists = hasHomeSlot(first);
+        boolean secondExists = hasHomeSlot(second);
+
+        SharedPreferences.Editor edit = prefs.edit();
+        if (secondExists) edit.putString(HOME_SLOT_PREFIX + first, secondValue);
+        else edit.remove(HOME_SLOT_PREFIX + first);
+        if (firstExists) edit.putString(HOME_SLOT_PREFIX + second, firstValue);
+        else edit.remove(HOME_SLOT_PREFIX + second);
         edit.apply();
     }
 
