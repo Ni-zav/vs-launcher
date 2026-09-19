@@ -49,6 +49,7 @@ final class LauncherSurface extends View {
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
+        void onSearchRequested();
         void onSettingAction(int action);
         void onWeatherTapped();
     }
@@ -921,8 +922,12 @@ final class LauncherSurface extends View {
         if (page != PAGE_HOME) return;
 
         float dy = event.getY() - downY;
-        if (dy < -dp(64f) && Math.abs(dy) > Math.abs(event.getX() - downX)) {
+        if (Math.abs(dy) <= Math.abs(event.getX() - downX)) return;
+
+        if (dy < -dp(64f)) {
             host.onQuickLaunchRequested();
+        } else if (dy > dp(64f)) {
+            host.onSearchRequested();
         }
     }
 
