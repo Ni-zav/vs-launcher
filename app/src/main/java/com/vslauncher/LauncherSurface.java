@@ -209,7 +209,7 @@ final class LauncherSurface extends View {
             return;
         }
 
-        cancelLongPress();
+        cancelPendingLongPress();
         cancelPageAnimator();
         if (settleAnimator != null) {
             settleAnimator.cancel();
@@ -552,7 +552,7 @@ final class LauncherSurface extends View {
                 float totalDx = event.getX() - downX;
                 float totalDy = event.getY() - downY;
                 if (Math.max(Math.abs(totalDx), Math.abs(totalDy)) > touchSlop) {
-                    cancelLongPress();
+                    cancelPendingLongPress();
                 }
 
                 if (gestureMode == GESTURE_NONE
@@ -578,7 +578,7 @@ final class LauncherSurface extends View {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                cancelLongPress();
+                cancelPendingLongPress();
 
                 if (velocityTracker != null) velocityTracker.addMovement(event);
                 float velocityX = 0f;
@@ -780,7 +780,7 @@ final class LauncherSurface extends View {
         return Math.max(0f, content - viewport);
     }
 
-    private void cancelLongPress() {
+    private void cancelPendingLongPress() {
         removeCallbacks(longPressRunnable);
         pressedHomeIndex = -1;
     }
@@ -793,7 +793,7 @@ final class LauncherSurface extends View {
     }
 
     @Override protected void onDetachedFromWindow() {
-        cancelLongPress();
+        cancelPendingLongPress();
         cancelPageAnimator();
         if (settleAnimator != null) settleAnimator.cancel();
         recycleVelocityTracker();
