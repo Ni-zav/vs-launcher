@@ -153,3 +153,21 @@ For any rendering/search/startup optimization:
 5. keep the change only if the regression/improvement is supported by measurement
 
 A perceived animation difference is not enough evidence by itself.
+
+
+---
+
+## Infinix Android 15+ baseline profile workflow
+
+For the exact physical-device workflow—including safe `adb install -r`, install-error triage, Android 15+ repeated cold starts, Baseline Profile generation, candidate packaging, controlled `CompilationMode.None` vs `Partial(BaselineProfileMode.Require)` A/B testing, sideload dexopt inspection, and the required evidence report—use:
+
+**[INFINIX_DEVICE_TEST.md](INFINIX_DEVICE_TEST.md)**
+
+Use **[device-tests/TEMPLATE.md](device-tests/TEMPLATE.md)** for a committed summary after a meaningful physical-device run.
+
+The repository deliberately separates:
+
+- `benchmark`: release-like, R8 optimized, used for timing
+- `baselineProfile`: non-obfuscated/non-optimized, used for profile capture
+
+Do not generate profile rules from the optimized benchmark variant.
