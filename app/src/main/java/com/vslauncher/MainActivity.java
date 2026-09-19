@@ -65,6 +65,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private LauncherPreferences launcherPreferences;
     private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
 
+    private List<AppEntry> allApps = Collections.emptyList();
     private List<AppEntry> apps = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
@@ -258,22 +259,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void reloadApps() {
         appRepository.load(loaded -> {
-            apps = loaded;
+            allApps = loaded;
             HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
             for (AppEntry app : loaded) {
                 index.put(app.component.flattenToString(), app);
             }
             appByComponent = Collections.unmodifiableMap(index);
-            filteredApps = AppRepository.filter(apps, query);
-            surface.setApps(apps, filteredApps);
+            refreshVisibleApps();
             resolveLauncherConfiguration();
         });
+    }
+
+    private void refreshVisibleApps() {
+        Set<String> hidden = launcherPreferences.hiddenComponents();
+        ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
+        for (AppEntry app : allApps) {
+            if (!hidden.contains(app.component.flattenToString())) visible.add(app);
+        }
+        apps = Collections.unmodifiableList(visible);
+        filteredApps = AppRepository.filter(apps, query, launcherPreferences.aliases());
+        surface.setApps(apps, filteredApps);
+        surface.setHiddenAppCount(hidden.size());
     }
 
     private void resolveLauncherConfiguration() {
         maxHomeApps = launcherPreferences.homeMax();
 
         ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
+        ArrayList<String> labels = new ArrayList<>(maxHomeApps);
         Set<String> used = new HashSet<>();
 
         for (int index = 0; index < maxHomeApps; index++) {
@@ -288,7 +301,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             }
 
             resolved.add(entry);
-            if (entry != null) used.add(entry.component.flattenToString());
+            if (entry != null) {
+                String component = entry.component.flattenToString();
+                String alias = launcherPreferences.alias(component);
+                labels.add(alias.isEmpty() ? entry.label : alias);
+                used.add(component);
+            } else {
+                labels.add("");
+            }
         }
 
         String quickComponent = launcherPreferences.quickApp();
@@ -303,7 +323,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         homeApps = Collections.unmodifiableList(resolved);
-        surface.setHomeConfiguration(homeApps, maxHomeApps, quickLabel);
+        surface.setHomeConfiguration(
+                homeApps,
+                Collections.unmodifiableList(labels),
+                maxHomeApps,
+                quickLabel
+        );
         surface.setHiddenAppCount(launcherPreferences.hiddenComponents().size());
     }
 
@@ -420,7 +445,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                filteredApps = AppRepository.filter(apps, query);
+                filteredApps = AppRepository.filter(
+                        apps,
+                        query,
+                        launcherPreferences.aliases()
+                );
                 surface.setFilteredApps(filteredApps);
             }
 
@@ -502,7 +531,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onHomeSlotLongPressed(int index) {
         if (index < 0 || index >= maxHomeApps) return;
-        showHomeAppPicker(index);
+        showHomeSlotMenu(index);
     }
 
     @Override public void onHomeMaxChanged(int requestedMax) {
@@ -634,16 +663,57 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
-    private void showHomeAppPicker(int slot) {
-        if (apps.isEmpty()) return;
+    private void showHomeSlotMenu(int slot) {
+        ArrayList<String> actions = new ArrayList<>();
+        actions.add("Change app");
 
-        CharSequence[] labels = new CharSequence[apps.size()];
-        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+        AppEntry current = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (current != null) actions.add("Rename");
+        if (slot > 0) actions.add("Move up");
+        if (slot + 1 < maxHomeApps) actions.add("Move down");
+        actions.add("Clear slot");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Home slot " + (slot + 1))
+                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
+                    String action = actions.get(which);
+                    switch (action) {
+                        case "Change app":
+                            showHomeAppPicker(slot);
+                            break;
+                        case "Rename":
+                            showRenameDialog(slot);
+                            break;
+                        case "Move up":
+                            launcherPreferences.swapHomeSlots(slot, slot - 1);
+                            resolveLauncherConfiguration();
+                            break;
+                        case "Move down":
+                            launcherPreferences.swapHomeSlots(slot, slot + 1);
+                            resolveLauncherConfiguration();
+                            break;
+                        case "Clear slot":
+                            launcherPreferences.clearHomeSlot(slot);
+                            resolveLauncherConfiguration();
+                            break;
+                        default:
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showHomeAppPicker(int slot) {
+        if (allApps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
         new AlertDialog.Builder(this)
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
-                    AppEntry selected = apps.get(which);
+                    AppEntry selected = allApps.get(which);
                     launcherPreferences.setHomeSlot(
                             slot,
                             selected.component.flattenToString()
@@ -654,16 +724,50 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .show();
     }
 
-    private void showQuickAppPicker() {
-        if (apps.isEmpty()) return;
+    private void showRenameDialog(int slot) {
+        AppEntry app = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (app == null) return;
 
-        CharSequence[] labels = new CharSequence[apps.size()];
-        for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).label;
+        String component = app.component.flattenToString();
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(DesignTokens.WHITE);
+        input.setHintTextColor(DesignTokens.WHITE);
+        input.setBackgroundColor(DesignTokens.BLACK);
+        input.setHint(app.label);
+        String existing = launcherPreferences.alias(component);
+        if (!existing.isEmpty()) {
+            input.setText(existing);
+            input.setSelection(existing.length());
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Rename " + app.label)
+                .setView(input)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    launcherPreferences.setAlias(component, input.getText().toString());
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNeutralButton("Reset", (dialog, which) -> {
+                    launcherPreferences.setAlias(component, "");
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showQuickAppPicker() {
+        if (allApps.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[allApps.size()];
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
-                    AppEntry selected = apps.get(which);
+                    AppEntry selected = allApps.get(which);
                     launcherPreferences.setQuickApp(selected.component.flattenToString());
                     resolveLauncherConfiguration();
                 })
