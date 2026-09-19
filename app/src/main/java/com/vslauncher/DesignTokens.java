@@ -6,9 +6,7 @@ import android.graphics.Typeface;
 /**
  * Central visual system for VS Launcher.
  *
- * The launcher is intentionally monochrome: pure-black wallpaper, white content,
- * and alpha-driven hierarchy. Keeping visual values here avoids per-frame object
- * creation and prevents design drift across screens.
+ * Pure black, white-alpha hierarchy, system fonts only.
  */
 final class DesignTokens {
     private DesignTokens() {}
@@ -30,11 +28,11 @@ final class DesignTokens {
     static final float ROW_HEIGHT_DP = 54f;
     static final float CORNER_DP = 12f;
 
-    static final float DATE_SP = 14f;
-    static final float TIME_SP = 52f;
+    static final float DATE_SP = 13f;
+    static final float TIME_SP = 62f;
     static final float META_SP = 13f;
     static final float LABEL_SP = 11f;
     static final float APP_SP = 19f;
-    static final float TITLE_SP = 22f;
+    static final float TITLE_SP = 20f;
     static final float SEARCH_SP = 17f;
 }
