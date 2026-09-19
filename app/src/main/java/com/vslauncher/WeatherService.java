@@ -66,7 +66,7 @@ final class WeatherService {
 
     void refreshNow() {
         if (!hasLocationPermission()) {
-            callback.onWeather("Weather · location permission");
+            callback.onWeather("Tap for weather");
             return;
         }
         findLocationAndFetch();
@@ -100,7 +100,7 @@ final class WeatherService {
             }
 
             if (provider == null) {
-                callback.onWeather("Weather · location disabled");
+                callback.onWeather("Location off");
                 return;
             }
 
@@ -110,7 +110,7 @@ final class WeatherService {
                 }
 
                 @Override public void onProviderDisabled(String provider) {
-                    callback.onWeather("Weather · location disabled");
+                    callback.onWeather("Location off");
                 }
 
                 @Override public void onProviderEnabled(String provider) { }
