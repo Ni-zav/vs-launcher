@@ -53,10 +53,15 @@ adb devices
 From the repository root:
 
 ```sh
-gradle --no-daemon :macrobenchmark:connectedCheck
+gradle --no-daemon :macrobenchmark:connectedBenchmarkAndroidTest
 ```
 
 The module targets the release-like `benchmark` build of `:app`.
+
+Use the variant-specific task: `connectedCheck` also runs the separate profile
+capture variant. Connected tests retain installed APKs, including launcher data,
+through the repository's Gradle settings. Never enable automatic uninstall on
+an incompatible-signature error.
 
 ## Included scenarios
 
@@ -90,7 +95,7 @@ Each test currently runs eight measured iterations.
 Example:
 
 ```sh
-gradle --no-daemon :macrobenchmark:connectedCheck \
+gradle --no-daemon :macrobenchmark:connectedBenchmarkAndroidTest \
   -P android.testInstrumentationRunnerArguments.class=com.vslauncher.macrobenchmark.LauncherMacrobenchmark#coldStartup
 ```
 

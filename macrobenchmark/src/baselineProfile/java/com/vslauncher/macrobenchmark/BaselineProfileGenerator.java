@@ -14,7 +14,7 @@ import org.junit.runner.RunWith;
 import kotlin.Unit;
 
 /**
- * Generates human-readable profile rules on the physical target device.
+ * Generates human-readable profile rules with the baselineProfile variant.
  *
  * Run against the non-obfuscated baselineProfile build variant so collected
  * method/class signatures remain meaningful. Do not copy generated rules into

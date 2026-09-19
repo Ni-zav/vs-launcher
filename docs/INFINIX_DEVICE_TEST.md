@@ -29,6 +29,14 @@ Do not declare a device test PASS from compilation alone.
 6. Do not use emulator numbers as Infinix performance evidence.
 7. Do not commit a generated Baseline Profile merely because generation succeeded. Measure it first.
 
+Connected Gradle tests also install the target APK. `gradle.properties` keeps
+APKs installed after the run and disables uninstalling incompatible APKs so
+test cleanup cannot erase the existing launcher configuration. Keep these
+settings enabled on a personal device. Restore the normal debug APK with
+`adb install -r` after testing. Capture and measurement test classes live in
+their respective variant source sets; do not move them into the shared `main`
+source set.
+
 ---
 
 ## 2. Required local tools

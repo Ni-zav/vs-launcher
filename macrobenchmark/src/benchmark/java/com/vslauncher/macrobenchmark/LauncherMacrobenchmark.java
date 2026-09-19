@@ -24,7 +24,7 @@ import kotlin.Unit;
 
 /**
  * Run on a physical Android device:
- *   gradle :macrobenchmark:connectedCheck
+ *   gradle :macrobenchmark:connectedBenchmarkAndroidTest
  *
  * The benchmark module and its AndroidX dependencies are never packaged into
  * the normal VS Launcher APK.
