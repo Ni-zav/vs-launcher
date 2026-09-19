@@ -1,104 +1,182 @@
-# VS Launcher 0.2 audit
+# VS Launcher 0.4 audit
 
-This document records the 0.2 redesign audit and the constraints that should remain true after future changes.
+This document records the architectural, performance, and visual constraints for the 0.4 customization release.
 
-## Audit summary
+## Current contract
 
-| Area | Before | 0.2 state |
-| --- | --- | --- |
-| Render path | Formatters, typefaces, strings, and filtered lists could be created during redraw/touch work | Drawing uses cached Paint/Typeface/status state; only visible app rows are drawn |
-| Idle work | Clock invalidated every 30 seconds | Clock is aligned to minute boundaries; no continuous animation loop |
-| App discovery | Package query + labels/sort on UI thread | Dedicated single-thread app index executor |
-| Search | Lowercasing/filtering repeated across draw and touch paths | Normalized label cached once; one O(n) filter pass when query changes |
-| App list motion | Scroll updated after finger-up | Direct touch tracking + frame-synced `OverScroller` fling |
-| Page motion | Discrete page switch | 1:1 drag with short frame-synced settle transition |
-| Package visibility | `QUERY_ALL_PACKAGES` | Scoped MAIN/LAUNCHER `<queries>` visibility |
-| Battery | Text-only state | Cached percentage/charging label + custom vector-like Canvas glyph |
-| Clock | Hard-coded 24h formatting | Device 12/24h preference and current timezone |
-| Weather | Placeholder | Coarse location + Open-Meteo + 20-minute local cache |
-| Location freshness | N/A | Last-known location accepted only if <=30 minutes old |
-| Insets | Fixed bottom margins | System bar + IME-aware layout |
-| Touch hit testing | Row index could resolve outside visible region | Explicit viewport/visible-row bounds |
-| Theme | Graphite + amber | True black + alpha-based white hierarchy |
-| Validation | No repository build gate | GitHub Actions assembles debug APK and runs Android lint |
+| Area | 0.4 state |
+| --- | --- |
+| Production UI | Native Java + one custom Canvas surface; no production UI framework |
+| Palette | Strict `#000000` + `#FFFFFF` only |
+| Idle rendering | No scheduled frame loop |
+| Geometry | Cached when size/insets/UI configuration change |
+| App lookup | O(1) component lookup map |
+| App indexing | Background executor; O(n log n) sort |
+| Search | Alias-aware ranked O(n) scan only when query changes |
+| All Apps | Visible-row drawing + `OverScroller` |
+| Settings | Visible-row drawing + `OverScroller` |
+| Page motion | Direct drag + configurable settle animation |
+| Home slots | Persistent 1–8 slots, aliases, move/clear/change |
+| Hidden apps | Removed from drawer/search only; still launchable from assigned Home/quick slots |
+| Status | Individually toggleable time/date/weather/battery with discrete layouts/formats |
+| Configuration | Typed SharedPreferences + versioned JSON import/export |
+| Release build | R8 optimization + resource shrinking |
+| Benchmarking | Separate benchmark build/test module; not packaged into normal launcher runtime |
+| Android 15+ | `setContentView()` happens before fullscreen/system-UI application |
 
 ## Complexity targets
 
-Let `n` be the number of launcher apps and `v` the number of visible rows.
+Let `n` be installed launcher activities and `v` be visible rows.
 
-- Idle frame work: **O(1)** and no scheduled frame loop.
+- Idle frame work: **O(1)** with no scheduled frame loop.
 - Home draw: **O(min(8, visible rows))**.
-- All Apps draw: **O(v)**, independent of total list length.
-- Search query change: **O(n)**.
-- App indexing after package change/startup: **O(n log n)** because results are sorted once.
-- App launch/hit test: **O(1)**.
-- Battery/date/time update: **O(1)**.
-- Weather render: **O(1)**; network/location work is off the UI thread.
+- All Apps draw: **O(v)**.
+- Settings draw: **O(v)**.
+- Query change: **O(n)** across a fixed number of ranking passes.
+- App indexing: **O(n log n)** after startup/package changes.
+- Saved component resolution: **O(1)**.
+- App-row hit testing: **O(1)**.
+- Battery/date/time rendering: **O(1)**.
+- Weather network/location work: outside the UI thread.
 
-A prefix index or trie is intentionally not used for search: Android launcher app counts are normally small enough that a compact O(n) scan has lower implementation/memory overhead while remaining outside the frame loop.
+A trie/prefix tree is intentionally not used. Typical launcher app counts do not justify the extra state and maintenance cost, and filtering does not execute per frame.
 
-## Render-path rules
+## Draw-path rules
 
-Do not add these to `LauncherSurface.onDraw()` or methods called per visible row:
+Do not add these to `LauncherSurface.onDraw()` or per-visible-row drawing:
 
-- network or disk I/O
-- package-manager queries
-- `SimpleDateFormat` construction
-- `Typeface.create(...)`
+- disk/network I/O
+- PackageManager queries
+- SharedPreferences reads
 - list filtering/sorting
-- bitmap decoding
-- new Paint/Path/Drawable allocation per frame
-- logging in the frame loop
-- continuously running animators
+- `Typeface.create(...)`
+- formatter construction
+- bitmap/icon decoding
+- per-frame Paint/Path/Drawable allocation
+- logging
+- continuously running animation
 
-Animation should exist only while the user is dragging, a page is settling, or a fling is active.
+Major geometry belongs in the cached layout state and should be recalculated only after a size, inset, density, position, or related configuration change.
 
-## Design-system rules
+## Strict two-color design
 
-All reusable visual values belong in `DesignTokens.java`.
+The production UI may use only:
 
-Hierarchy:
-1. **Primary (96% white):** time, titles, app names.
-2. **Secondary (72% white):** date, battery/weather metadata, secondary copy.
-3. **Tertiary (46% white):** section labels / low-priority guidance.
-4. **Divider (14% white):** one-pixel-equivalent separators.
-5. **Selected surface (9% white):** subtle setting selection.
+- `#000000`
+- `#FFFFFF`
 
-Typography is system-only:
+Do not use alpha-white as hierarchy because it visually produces gray on the black background.
+
+Hierarchy should come from:
+
+- font family/weight
+- text size
+- spacing
+- position
+- line/outline geometry
+- black/white inversion when a selection treatment is truly needed
+
+Do not add blur, gradients, shadows, wallpapers, colored accents, or decorative motion.
+
+System fonts only:
+
 - display: `sans-serif-light`
 - body: `sans-serif`
 - label: `sans-serif-medium`
 
-Do not bundle a custom font unless visual identity clearly outweighs APK size, load cost, fallback behavior, and maintenance.
+## Interaction contract
 
-## Functional failure states
+Home:
+- left → All Apps
+- right → Settings
+- up → quick-launch app
+- down → focused search
+- long press Home row → change/rename/move/clear
+- tap weather → permission/refresh
 
-Weather must never invent data. It renders an explicit state when:
-- location permission is missing
-- device location is disabled
-- location/network request fails and no cache exists
+All Apps:
+- tap → launch
+- long press → Add to Home / Hide / App info / Uninstall
+- hidden apps are presentation-only hiding, not a security feature
 
-When a cache exists, failed refreshes keep the last valid cached weather instead of flashing an error.
+Settings:
+- text-only rows
+- discrete presets instead of arbitrary sliders
+- vertical scrolling only while needed
 
-If launching an app fails because the package/activity changed, the launcher refreshes its app index.
+## Persistence and portability
+
+`LauncherPreferences` is the only typed source for user configuration.
+
+The JSON export format is versioned. Import:
+- uses Android's Storage Access Framework
+- requires no broad storage permission
+- is capped at 256 KB
+- must validate the format version before applying
+
+Do not store secrets in exported launcher configuration.
+
+## Weather failure states
+
+Weather must never invent a value.
+
+Explicit/fallback states cover:
+- missing coarse-location permission
+- location services disabled
+- network/location failure with no cache
+- cached valid weather after a refresh failure
+
+Coordinates are rounded before network use and are not persisted.
+
+## Android 15+ invariant
+
+Do not move fullscreen/system-bar manipulation back before the content view is installed.
+
+The known-safe startup order is:
+
+```text
+construct root/surface
+setContentView(root)
+applyMinimalSystemUi()
+requestApplyInsets()
+```
+
+This preserves the Android 15+ startup fix used on the current target device.
 
 ## Validation checklist
 
-Before merging rendering or interaction changes:
+Before merging launcher behavior/rendering changes:
 
 1. `gradle --no-daemon :app:assembleDebug :app:lintDebug`
-2. Install on at least one physical Android device.
-3. Verify Home selection after pressing the system Home key.
-4. Swipe repeatedly Settings ↔ Home ↔ All Apps; look for frame hitching.
-5. Fling a long All Apps list and tap rows after scrolling.
-6. Search for an app, clear the query, launch a result.
-7. Install/uninstall an app and confirm the list refreshes.
-8. Test 12-hour and 24-hour clock settings.
-9. Test charging/unplugged battery states.
-10. Test weather permission denied, permission granted, location disabled, offline cached state, and manual refresh.
-11. Open/close the IME and rotate through supported system-bar/navigation modes.
-12. Profile any suspected jank with Perfetto/System Trace before optimizing based on intuition.
+2. Confirm CI publishes the debug APK artifact.
+3. Install on a physical Android 15+ device.
+4. Verify launcher selection after pressing Home.
+5. Repeatedly swipe Settings ↔ Home ↔ All Apps.
+6. Fling long All Apps and Settings lists.
+7. Verify swipe-left browsing does not force the keyboard.
+8. Verify swipe-down opens focused search.
+9. Test alias prefix/substring search ordering.
+10. Change, rename, move, and clear Home slots.
+11. Hide/unhide apps and verify assigned hidden apps remain launchable.
+12. Test quick-launch selection.
+13. Test all position/density/text presets.
+14. Toggle each status module and cycle its format/layout modes.
+15. Test instant/fast/normal page motion and haptics off/on.
+16. Export and re-import configuration.
+17. Install/uninstall an app and confirm indexing/state remains safe.
+18. Test 12h/24h/system time and all date styles.
+19. Test battery charging/unplugged states and display modes.
+20. Test weather permission denied/granted, location disabled, offline cache, refresh.
+21. Test IME/system insets and Android 15+ fullscreen startup.
+22. Run the Macrobenchmark suite on the same physical device before/after performance-sensitive changes.
 
-## Remaining measurement boundary
+## Measurement boundary
 
-Build + lint proves source/API correctness, not a universal FPS number. Frame timing must be measured on target hardware. For performance regressions, record frame timing before and after a change and compare the same gesture on the same device/build configuration.
+Build + lint prove source/API correctness, not a universal FPS number.
+
+For performance changes:
+- use the same physical device
+- use the same launcher configuration
+- compare the same gesture/scenario
+- inspect Macrobenchmark frame/startup results and generated Perfetto traces
+- avoid optimizing from visual intuition alone
