@@ -82,6 +82,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private Map<String, String> aliases = Collections.emptyMap();
     private Map<String, String> normalizedAliases = Collections.emptyMap();
+    private Map<String, String> aliasInitials = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
@@ -292,13 +293,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         aliases = loaded;
 
         HashMap<String, String> normalized = new HashMap<>(Math.max(16, loaded.size() * 2));
+        HashMap<String, String> initials = new HashMap<>(Math.max(16, loaded.size() * 2));
         for (Map.Entry<String, String> entry : loaded.entrySet()) {
             String value = entry.getValue();
             if (value == null) continue;
             String clean = value.trim().toLowerCase(Locale.ROOT);
-            if (!clean.isEmpty()) normalized.put(entry.getKey(), clean);
+            if (!clean.isEmpty()) {
+                normalized.put(entry.getKey(), clean);
+                String aliasInitial = SearchRanking.initials(value);
+                if (!aliasInitial.isEmpty()) initials.put(entry.getKey(), aliasInitial);
+            }
         }
         normalizedAliases = Collections.unmodifiableMap(normalized);
+        aliasInitials = Collections.unmodifiableMap(initials);
     }
 
     private void refreshVisibleApps() {
@@ -308,7 +315,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (!hidden.contains(app.componentKey)) visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases);
+        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
         surface.setApps(apps, filteredApps);
         surface.setHiddenAppCount(hidden.size());
     }
@@ -496,7 +503,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 filteredApps = AppRepository.filter(
                         apps,
                         query,
-                        normalizedAliases
+                        normalizedAliases,
+                        aliasInitials
                 );
                 surface.setFilteredApps(filteredApps);
                 scheduleSingleResultLaunch(query, filteredApps);
