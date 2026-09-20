@@ -65,6 +65,7 @@ final class LauncherSurface extends View {
         void onDateTapped();
         void onWeatherTapped();
         void onBatteryTapped();
+        void onUndoRequested();
     }
 
     private static final String[] ALPHABET_LABELS = {
@@ -124,6 +125,11 @@ final class LauncherSurface extends View {
     private String weatherText = "Weather · tap to enable";
     private String batteryText = "—";
     private String quickAppLabel = "Not set";
+    private String transientMessage = "";
+    private float transientMessageWidth;
+    private final String undoLabel = "UNDO";
+    private float undoLabelWidth;
+    private boolean transientUndoVisible;
     private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
     private float dateTextWidth;
 
@@ -205,6 +211,10 @@ final class LauncherSurface extends View {
     private float alphabetFirstBaselinePx;
     private float alphabetActiveBaselinePx;
     private float appsSearchPullThresholdPx;
+    private float transientBaselinePx;
+    private float transientTapTopPx;
+    private float transientTapBottomPx;
+    private float transientUndoLeftPx;
     private boolean appsSearchPullTriggered;
     private float downX;
     private float downY;
@@ -277,6 +287,7 @@ final class LauncherSurface extends View {
             alphabetWidths[i] = alphabetPaint.measureText(ALPHABET_LABELS[i]);
             alphabetActiveWidths[i] = titlePaint.measureText(ALPHABET_LABELS[i]);
         }
+        undoLabelWidth = metaPressedPaint.measureText(undoLabel);
 
         statusStrokePaint.setStyle(Paint.Style.STROKE);
         statusStrokePaint.setStrokeWidth(dp(1.2f));
@@ -424,6 +435,15 @@ final class LauncherSurface extends View {
         if (page == PAGE_APPS) invalidate();
     }
 
+    void setTransientMessage(String message, boolean showUndo) {
+        transientMessage = message == null ? "" : message;
+        transientMessageWidth = transientMessage.isEmpty()
+                ? 0f
+                : metaPaint.measureText(transientMessage);
+        transientUndoVisible = showUndo && !transientMessage.isEmpty();
+        invalidate();
+    }
+
     void setHiddenAppCount(int count) {
         hiddenAppCount = Math.max(0, count);
         refreshSettingsValueCache();
@@ -529,6 +549,7 @@ final class LauncherSurface extends View {
         if (transitionRunning) {
             drawPage(canvas, transitionFrom, transitionOldOffset);
             drawPage(canvas, transitionTo, transitionOldOffset - transitionOldEnd);
+            drawTransientMessage(canvas);
             return;
         }
 
@@ -542,10 +563,25 @@ final class LauncherSurface extends View {
             } else {
                 drawPage(canvas, page, dragOffsetX * 0.18f);
             }
+            drawTransientMessage(canvas);
             return;
         }
 
         drawPage(canvas, page, 0f);
+        drawTransientMessage(canvas);
+    }
+
+    private void drawTransientMessage(Canvas canvas) {
+        if (transientMessage.isEmpty()) return;
+        canvas.drawText(transientMessage, leftPx, transientBaselinePx, metaPaint);
+        if (transientUndoVisible) {
+            canvas.drawText(
+                    undoLabel,
+                    transientUndoLeftPx,
+                    transientBaselinePx,
+                    metaPressedPaint
+            );
+        }
     }
 
     private void drawPage(Canvas canvas, int targetPage, float offsetX) {
@@ -591,6 +627,11 @@ final class LauncherSurface extends View {
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
         alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
         appsSearchPullThresholdPx = dp(34f);
+        float transientReserveDp = searchActive ? 76f : 18f;
+        transientBaselinePx = getHeight() - bottomInset - dp(transientReserveDp);
+        transientTapTopPx = transientBaselinePx - dp(24f);
+        transientTapBottomPx = transientBaselinePx + dp(12f);
+        transientUndoLeftPx = rightPx - undoLabelWidth;
 
         dividerThicknessPx = dp(1f);
         timeBaselinePx = contentTopPx + dp(58f);
@@ -1392,6 +1433,15 @@ final class LauncherSurface extends View {
 
     private void handleTap(float x, float y) {
         float top = contentTop();
+
+        if (transientUndoVisible
+                && x >= transientUndoLeftPx - dp(18f)
+                && x <= rightPx
+                && y >= transientTapTopPx
+                && y <= transientTapBottomPx) {
+            host.onUndoRequested();
+            return;
+        }
 
         if (page == PAGE_HOME) {
             if (handleStatusTap(x, y)) return;
