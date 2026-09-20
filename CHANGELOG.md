@@ -26,6 +26,15 @@
 - Normalized pressed-state brightness across Home apps/hints, Apps, profile labels, and Settings without row backgrounds.
 - When weather and battery are both visible they remain a left/right pair; a lone status item uses the natural left-side position with matching tap/accessibility bounds.
 
+### Intent-aware singleton search
+
+- Kept the signature "one app remains → auto-launch" behavior, but replaced the fixed 160ms trigger with intent-aware quiet windows: 650ms for a new singleton, 400ms for the same surviving candidate, and 180ms for an exact canonical/alias match.
+- Every search edit invalidates the previous pending generation; stale callbacks re-check raw query, normalized query, page, candidate identity, and IME composition before launch.
+- IME composing text, leading-space escape, unfinished calculator/time/URL syntax, explicit utility/GUIDE rows, and sentence-like weak app matches block app auto-launch.
+- Explicit DIAL/OPEN/TIMER/ALARM/CALC/WEB intent can take first-result priority so Go/Enter executes the intended action instead of an incidental app match.
+- General multi-word text may expose WEB beside weak substring/fuzzy app matches; strong app prefixes such as `google ma` remain app-like.
+- The policy is bounded O(1) after the existing app-filter pass and introduces no second app traversal, I/O, package lookup, network work, or Canvas hot-path work.
+
 ### Performance / compatibility
 
 - Added JVM coverage for Dense row fitting, text-safe Home row height, `#–Z` bucket mapping, actual-bucket snapping, and Settings section rhythm.

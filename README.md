@@ -11,7 +11,7 @@ VS Launcher is a native, text-first Android home screen written in Java with pla
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
 - **Swipe down** from Home → intentionally unused.
-- **Type until one app remains** → the stable singleton app auto-launches after a short debounce when only quiet SYSTEM rows accompany it; explicit timer/alarm/calc/dial/URL/web/help intent suppresses app auto-launch.
+- **Type until one app remains** → the singleton stays auto-launchable, but only after an intent-aware quiet period. Continued typing cancels the pending launch; exact app/alias matches resolve faster; IME composition, forming calculator/timer/alarm/URL intent, structured actions, and general-text WEB intent suppress it.
 - **Keyboard Go/Enter** → launches the first ranked result immediately.
 - **Utility queries** → `timer 10m`, `alarm 07:30`, `23*17`, system commands, direct dial/URL actions, and explicit web fallback stay inside the same search surface.
 - **Tap + ADD APP** → open the Home app picker directly.
@@ -71,9 +71,9 @@ App ranking remains deterministic:
 
 Normalization is forgiving but deterministic: accents are stripped for matching and punctuation/repeated whitespace collapse to word separators. For example, `Pokémon` matches `pokemon`, and `my-app` matches `my app`.
 
-Apps remain ahead of latent non-app actions. Search may append quiet semantic rows for system actions, safe dialing, opening a URL, timer/alarm creation, local arithmetic, help, or an explicit web fallback. Those rows never auto-launch; tap or keyboard Go/Enter is required. A lone app may still auto-launch beside passive SYSTEM rows, but explicit structured utility/help intent suppresses that app auto-launch so typed intent is never stolen.
+Passive SYSTEM rows remain behind apps, but explicit structured intent is allowed to take the first row: DIAL, OPEN, TIMER, ALARM, CALC, or deliberate WEB. Those rows never auto-launch; tap or keyboard Go/Enter is required. A lone app still auto-launches after an intent-aware quiet period when the query remains app-like. Every edit cancels the previous pending launch, IME composing text cannot fire, and unfinished arithmetic/time/URL input blocks app auto-launch before the corresponding utility is fully parseable.
 
-Examples include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `timer 10m`, `alarm 07:30`, `23*17`, `example.com`, `help`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`. If no app/system/direct utility matches, search may show one deliberate `Search web` row; VS itself performs no network search.
+Examples include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `timer 10m`, `alarm 07:30`, `23*17`, `example.com`, `help`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`. `Search web` appears when nothing direct matches and may also coexist with weak app matches for sentence-like multi-word text, so a coincidental fuzzy app cannot steal a general query. VS itself performs no network search.
 
 Aliases affect Home and app search ranking; Apps still shows the application's canonical label. Hidden apps are excluded from Apps/search only. Existing personal/work Home slots and quick-launch assignments can still launch a hidden app.
 

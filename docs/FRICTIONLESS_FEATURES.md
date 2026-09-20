@@ -44,7 +44,7 @@ Home
 → auto-launch
 ```
 
-A stable single **app** result auto-launches after a short debounce when any accompanying rows are passive SYSTEM commands. Explicit structured utility rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB) and GUIDE suppress singleton app auto-launch so deliberate typed intent is never stolen. Non-app rows themselves never auto-launch. Keyboard Go/Enter immediately executes the first ranked row.
+A stable single **app** result still auto-launches, but the commit is intent-aware rather than a fixed 160ms reaction. The first singleton gets a 650ms quiet window, the same surviving candidate on the next edit gets 400ms, and an exact canonical/alias match gets 180ms. Every edit invalidates the previous generation. IME composing text, a leading-space escape, unfinished arithmetic/time/URL intent, explicit structured rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB), GUIDE, or sentence-like weak matching blocks app auto-launch. Keyboard Go/Enter immediately executes the first ranked row.
 
 Browse mode can return to search without going Home:
 
@@ -149,13 +149,15 @@ help
 
 Rules:
 
-- apps stay before non-app rows
+- passive SYSTEM rows stay behind apps; explicit structured intent (DIAL/OPEN/TIMER/ALARM/CALC/WEB) may move ahead of apps so Go/Enter executes the typed intent
 - commands require at least two normalized characters
 - command/direct-utility results never auto-fire
 - passive SYSTEM rows may coexist with lone-app auto-launch; explicit structured utility/GUIDE rows suppress it
 - the typed query is normalized exactly once per edit and the cached normalized value is reused
 - timer/alarm/calculator/URL/dial parsing stays local and I/O-free
 - web fallback delegates to Android/browser handling; VS performs no search request itself
+- sentence-like multi-word text can expose WEB beside weak substring/fuzzy app matches, while strong app prefixes such as `google ma` stay app-like
+- singleton commit policy is O(1) after filtering: no second app traversal, package lookup, storage access, network work, or draw-path work
 - no contacts, history, browser engine, AI parser, or call permission are introduced
 - Settings Panels are preferred for Wi-Fi/Internet/Volume/NFC on API 29+ when available
 
