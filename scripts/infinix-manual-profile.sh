@@ -32,6 +32,24 @@ timestamp() {
   date +%Y%m%d-%H%M%S
 }
 
+require_vs_not_default_home() {
+  local holders
+  holders="$(adb_run shell cmd role get-role-holders android.app.role.HOME 2>/dev/null | tr -d '\r')"
+  if printf '%s\n' "$holders" | grep -qx "$PACKAGE"; then
+    cat >&2 <<EOF
+VS Launcher is currently the HOME role holder.
+
+For manual profile capture/startup measurement, temporarily select the stock
+launcher as the default Home app first. Otherwise Android may relaunch
+com.vslauncher immediately after force-stop and invalidate cold-start state.
+
+Current HOME holder(s):
+$holders
+EOF
+    return 40
+  fi
+}
+
 require_api34() {
   local api
   api="$(adb_run shell getprop ro.build.version.sdk | tr -d '\r')"
@@ -120,6 +138,7 @@ build_capture() {
 prepare_capture() {
   local result_dir="$1"
   require_api34
+  require_vs_not_default_home
   mkdir -p "$result_dir"
   record_device "$result_dir/device.txt"
   build_capture "$result_dir"
