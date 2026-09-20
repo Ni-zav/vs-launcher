@@ -307,7 +307,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         for (Map.Entry<String, String> entry : loaded.entrySet()) {
             String value = entry.getValue();
             if (value == null) continue;
-            String clean = value.trim().toLowerCase(Locale.ROOT);
+            String clean = SearchNormalization.normalize(value);
             if (!clean.isEmpty()) {
                 normalized.put(entry.getKey(), clean);
                 String aliasInitial = SearchRanking.initials(value);
