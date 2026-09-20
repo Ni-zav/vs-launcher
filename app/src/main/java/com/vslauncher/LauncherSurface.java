@@ -430,8 +430,7 @@ final class LauncherSurface extends View {
     private void cacheAlphabetRow(int row, AppEntry app) {
         String normalized = app.normalizedLabel;
         if (normalized.isEmpty()) return;
-        char first = Character.toUpperCase(normalized.charAt(0));
-        int bucket = first >= 'A' && first <= 'Z' ? first - 'A' : 26;
+        int bucket = LauncherLayout.alphabetBucket(normalized);
         if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = row;
     }
 
