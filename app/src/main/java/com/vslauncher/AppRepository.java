@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -268,7 +267,7 @@ final class AppRepository {
             Map<String, String> normalizedAliases,
             Map<String, String> aliasInitials
     ) {
-        String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String normalized = SearchNormalization.normalize(query);
         if (normalized.isEmpty()) return source;
 
         @SuppressWarnings("unchecked")
