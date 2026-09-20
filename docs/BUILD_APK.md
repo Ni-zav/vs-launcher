@@ -48,7 +48,7 @@ After the workflow is green:
 Inside it is:
 
 ```text
-VS-Launcher-0.6.0-debug.apk
+VS-Launcher-0.7.0-debug.apk
 ```
 
 The artifact is retained for 14 days.
@@ -142,7 +142,7 @@ The script:
 Output:
 
 ```text
-dist/VS-Launcher-0.6.0-debug.apk
+dist/VS-Launcher-0.7.0-debug.apk
 ```
 
 The raw Android Gradle output also remains at:
@@ -156,14 +156,14 @@ app/build/outputs/apk/debug/app-debug.apk
 Enable Developer Options + USB debugging on the phone, connect it, then:
 
 ```sh
-adb install -r dist/VS-Launcher-0.6.0-debug.apk
+adb install -r dist/VS-Launcher-0.7.0-debug.apk
 ```
 
 If the installed copy was signed with a different key, uninstall it first:
 
 ```sh
 adb uninstall com.vslauncher
-adb install dist/VS-Launcher-0.6.0-debug.apk
+adb install dist/VS-Launcher-0.7.0-debug.apk
 ```
 
 Then press Home and select VS Launcher.
@@ -236,7 +236,7 @@ mkdir -p dist
 "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
   -f -p 4 \
   app/build/outputs/apk/release/app-release-unsigned.apk \
-  dist/VS-Launcher-0.6.0-aligned.apk
+  dist/VS-Launcher-0.7.0-aligned.apk
 ```
 
 If your SDK uses `ANDROID_SDK_ROOT` instead:
@@ -251,8 +251,8 @@ If your SDK uses `ANDROID_SDK_ROOT` instead:
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
   --ks vs-launcher-release.jks \
   --ks-key-alias vslauncher \
-  --out dist/VS-Launcher-0.6.0.apk \
-  dist/VS-Launcher-0.6.0-aligned.apk
+  --out dist/VS-Launcher-0.7.0.apk \
+  dist/VS-Launcher-0.7.0-aligned.apk
 ```
 
 Leave the password options off the command line so `apksigner` can prompt you instead of placing passwords in shell history.
@@ -263,19 +263,19 @@ Leave the password options off the command line so `apksigner` can prompt you in
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
   --verbose \
   --print-certs \
-  dist/VS-Launcher-0.6.0.apk
+  dist/VS-Launcher-0.7.0.apk
 ```
 
 The installable release APK is now:
 
 ```text
-dist/VS-Launcher-0.6.0.apk
+dist/VS-Launcher-0.7.0.apk
 ```
 
 Install it by opening it on the phone or with:
 
 ```sh
-adb install -r dist/VS-Launcher-0.6.0.apk
+adb install -r dist/VS-Launcher-0.7.0.apk
 ```
 
 Every future release that should update this installation must be signed with the same `vs-launcher-release.jks`.
@@ -398,16 +398,21 @@ After installing:
 4. Long-press a Home app row, select a different app, and confirm the slot persists.
 5. Swipe right to Settings, change **Visible apps**, and choose a **Swipe up** app.
 6. Return Home and swipe up; the selected quick app should open directly.
-7. Swipe left to Apps and confirm search is immediately focused with the keyboard requested.
-8. Type until one result remains and confirm the stable singleton auto-launch behavior; also verify keyboard Go/Enter launches the first result.
-9. Re-enter Apps, start vertically scrolling, and confirm search/query/keyboard disappear, the list expands, and the A–Z rail appears.
-10. Scrub the right-side A–Z rail and confirm it jumps to app initials without leaving a permanent overlay.
-11. Rename/reorder/clear a Home slot and confirm it persists; tap `+ ADD APP` and confirm the picker opens directly.
-12. Long-press an app and verify native shortcuts appear when exposed, followed by launcher actions.
-13. Tap time/date/battery/weather and verify their semantic actions.
-14. If work/private profiles exist, verify their conditional containers, quiet/lock behavior, and Private Space search privacy.
-15. Change position, density, text size, status modules/formats, animation speed, and haptics in Settings.
-16. Export the JSON configuration with Android's document picker, then import it again.
-17. Reboot once and confirm Home slots, aliases, hidden apps, visual preferences, Private Space visibility preference, and quick-launch app persist.
+7. Swipe left to Apps and confirm search is immediately focused with a borderless field and the keyboard requested.
+8. Type until one app remains and confirm the stable singleton app launches even if a quiet SYSTEM row is also present; verify command-only rows never auto-launch.
+9. Re-enter Apps, start vertically scrolling, and confirm search/query/keyboard disappear, the list expands, and the A–Z + # rail appears.
+10. Tap APPS and confirm search returns; return to browse and pull down at the top to confirm the same search re-entry.
+11. Verify Back performs Search → Browse → Home.
+12. Scrub A–Z + # and confirm available/unavailable letters use different luminance while the active letter is transient.
+13. Search `wifi`, `volume`, and `settings`; verify quiet SYSTEM rows execute only after tap/Go.
+14. Search a safe phone number and domain; verify DIAL opens the dialer without placing a call and OPEN hands the URL to Android.
+15. Long-press an app with native shortcuts, pin one into Home, launch it from the text row, export/import config, and confirm the shortcut remains usable.
+16. Hide an app from long-press and clear/remove a Home row; verify the single transient UNDO action restores each case.
+17. Verify the calm monochrome hierarchy: no white row flash, secondary/meta text recedes, Settings values/sections have distinct hierarchy, and low battery is emphasized only by luminance.
+18. Tap `+ ADD APP`, rename/reorder Home rows, and confirm ordinary app-slot persistence.
+19. Tap time/date/battery/weather and verify semantic actions.
+20. If work/private profiles exist, verify their conditional containers, quiet/lock behavior, and Private Space search/Home privacy.
+21. Change position, density, text size, status modules/formats, animation speed, and haptics in Settings.
+22. Reboot once and confirm Home app/shortcut slots, aliases, hidden apps, visual preferences, Private Space visibility preference, and quick-launch app persist.
 
 For repeatable physical-device performance validation, see `docs/BENCHMARK.md`. The benchmark tooling is isolated from the normal launcher APK.
