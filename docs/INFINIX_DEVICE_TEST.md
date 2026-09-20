@@ -206,7 +206,7 @@ bash scripts/build-debug-apk.sh
 Expected APK:
 
 ```text
-dist/VS-Launcher-0.8.0-debug.apk
+dist/VS-Launcher-0.9.0-debug.apk
 ```
 
 Verify device:
@@ -223,7 +223,7 @@ adb shell getprop ro.build.fingerprint
 Install/update without deleting data:
 
 ```sh
-adb install -r dist/VS-Launcher-0.8.0-debug.apk
+adb install -r dist/VS-Launcher-0.9.0-debug.apk
 ```
 
 Verify installed version:
@@ -286,7 +286,7 @@ Required response:
 ```sh
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
   --verbose --print-certs \
-  dist/VS-Launcher-0.8.0-debug.apk
+  dist/VS-Launcher-0.9.0-debug.apk
 ```
 
 5. only uninstall after intentionally accepting the local-data loss:
@@ -634,7 +634,7 @@ The committed report should contain facts, not generated-log dumps:
 - install result
 - whether install preserved existing data
 - HOME role/manual launcher selection result
-- 0.8 search/browse + utility/help/accessibility result
+- 0.9 minimal-layout + search/browse/accessibility result
 - command/dial/URL action result
 - pinned Home shortcut + import persistence result
 - transient Undo result
