@@ -160,6 +160,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
+        appRepository.setChangeCallback(this::reloadApps);
         weatherService = new WeatherService(this, text -> {
             latestWeatherText = text;
             surface.setWeather(formatWeather(text));
@@ -426,12 +427,22 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private void registerPackageChanges() {
         if (packageReceiverRegistered) return;
 
+        // LauncherApps.Callback handles app/package changes across profiles.
+        // These generic profile broadcasts handle add/remove and quiet-mode transitions.
         IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
-        filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        filter.addAction(Intent.ACTION_PACKAGE_CHANGED);
-        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
-        filter.addDataScheme("package");
+        if (Build.VERSION.SDK_INT >= 34) {
+            filter.addAction(Intent.ACTION_PROFILE_ADDED);
+            filter.addAction(Intent.ACTION_PROFILE_REMOVED);
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            filter.addAction(Intent.ACTION_PROFILE_AVAILABLE);
+            filter.addAction(Intent.ACTION_PROFILE_UNAVAILABLE);
+        } else {
+            filter.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
+            filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+        }
+        filter.addAction(Intent.ACTION_MANAGED_PROFILE_ADDED);
+        filter.addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(packageReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
