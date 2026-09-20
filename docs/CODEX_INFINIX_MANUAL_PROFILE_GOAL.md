@@ -224,6 +224,7 @@ Include:
 - smoke-test result
 - ProfileInstaller skip-file cleanup result
 - limitations: manual A/B, not Macrobenchmark
+- current profile delivery status for normal debug/release sideload APKs
 - final decision: KEEP / REJECT / INCONCLUSIVE
 
 Do not claim `CompilationMode.None` or
@@ -239,6 +240,10 @@ regression:
 3. run build/lint and performance variant assembly
 4. push the commits
 5. do not add a fabricated `startup-prof.txt`
+6. explicitly report that normal debug/release variants currently do not include
+   ProfileInstaller; do not silently add it in this run
+7. recommend a separate delivery follow-up if direct-sideload users need the
+   measured Baseline Profile benefit
 
 If the candidate is slower, noisy, or inconclusive:
 - remove the staged candidate
