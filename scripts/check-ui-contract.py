@@ -48,6 +48,8 @@ hot_methods = [
     "drawBattery",
     "drawApps",
     "drawAppRows",
+    "drawBrowseRows",
+    "drawAlphabetRail",
     "drawSettings",
     "drawSettingsRow",
 ]
@@ -58,13 +60,19 @@ for method in hot_methods:
         if forbidden in body:
             errors.append(f"{method} contains draw-time forbidden token: {forbidden}")
 
-for forbidden in ("SharedPreferences", "PackageManager", "launcherPreferences"):
+for forbidden in ("SharedPreferences", "PackageManager", "LauncherApps", "launcherPreferences"):
     if forbidden in surface:
         errors.append(f"LauncherSurface must not depend on {forbidden}")
 
 text_changed = method_body(main, "onTextChanged")
 if "launcherPreferences.aliases()" in text_changed or "getAll()" in text_changed:
     errors.append("Search TextWatcher must not read SharedPreferences aliases")
+
+manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+if "android.permission.QUERY_ALL_PACKAGES" in manifest:
+    errors.append("Launcher must not request QUERY_ALL_PACKAGES")
+if "android.permission.ACCESS_HIDDEN_PROFILES" not in manifest:
+    errors.append("Private Space support requires ACCESS_HIDDEN_PROFILES")
 
 color_calls = set(re.findall(r"Color\.([A-Za-z0-9_]+)", tokens))
 unexpected_colors = color_calls - {"BLACK", "WHITE"}
