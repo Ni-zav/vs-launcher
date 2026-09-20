@@ -526,6 +526,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         removeSearch();
+        if (target == LauncherSurface.PAGE_APPS && focusSearch) {
+            appsBrowseMode = false;
+            surface.setSearchActive(true);
+        }
         surface.setPage(target);
 
         if (target == LauncherSurface.PAGE_APPS) {
