@@ -1,12 +1,16 @@
 package com.vslauncher;
 
-import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
+import android.content.pm.LauncherActivityInfo;
+import android.content.pm.LauncherApps;
+import android.content.pm.LauncherUserInfo;
+import android.content.pm.ShortcutInfo;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
+import android.os.UserHandle;
+import android.os.UserManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,7 +26,13 @@ final class AppRepository {
         void onLoaded(List<AppEntry> apps);
     }
 
+    interface ShortcutsCallback {
+        void onLoaded(List<ShortcutInfo> shortcuts);
+    }
+
     private final Context context;
+    private final LauncherApps launcherApps;
+    private final UserManager userManager;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "vs-app-index");
@@ -32,40 +42,150 @@ final class AppRepository {
 
     AppRepository(Context context) {
         this.context = context.getApplicationContext();
+        launcherApps = this.context.getSystemService(LauncherApps.class);
+        userManager = this.context.getSystemService(UserManager.class);
     }
 
     void load(Callback callback) {
         executor.execute(() -> {
-            PackageManager manager = context.getPackageManager();
-            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null)
-                    .addCategory(Intent.CATEGORY_LAUNCHER);
+            ArrayList<AppEntry> result = new ArrayList<>();
+            if (launcherApps != null && userManager != null) {
+                try {
+                    for (UserHandle user : launcherApps.getProfiles()) {
+                        int kind = profileKind(user);
+                        long serial = userManager.getSerialNumberForUser(user);
+                        List<LauncherActivityInfo> activities;
+                        try {
+                            activities = launcherApps.getActivityList(null, user);
+                        } catch (IllegalStateException | SecurityException error) {
+                            continue;
+                        }
 
-            List<AppEntry> result = new ArrayList<>();
-            for (ResolveInfo info : manager.queryIntentActivities(launcherIntent, 0)) {
-                if (info.activityInfo == null
-                        || context.getPackageName().equals(info.activityInfo.packageName)) {
-                    continue;
+                        for (LauncherActivityInfo info : activities) {
+                            if (info == null
+                                    || context.getPackageName().equals(
+                                    info.getComponentName().getPackageName())) {
+                                continue;
+                            }
+
+                            CharSequence loadedLabel = info.getLabel();
+                            String label = loadedLabel == null
+                                    ? info.getComponentName().getPackageName()
+                                    : loadedLabel.toString().trim();
+                            if (label.isEmpty()) {
+                                label = info.getComponentName().getPackageName();
+                            }
+
+                            result.add(new AppEntry(
+                                    label,
+                                    info.getComponentName(),
+                                    user,
+                                    serial,
+                                    kind
+                            ));
+                        }
+                    }
+                } catch (IllegalStateException | SecurityException ignored) {
                 }
-
-                CharSequence loadedLabel = info.loadLabel(manager);
-                String label = loadedLabel == null
-                        ? info.activityInfo.packageName
-                        : loadedLabel.toString().trim();
-                if (label.isEmpty()) label = info.activityInfo.packageName;
-
-                result.add(new AppEntry(
-                        label,
-                        new ComponentName(info.activityInfo.packageName, info.activityInfo.name)
-                ));
             }
 
             result.sort(Comparator
-                    .comparing((AppEntry app) -> app.normalizedLabel)
+                    .comparingInt((AppEntry app) -> app.profileKind)
+                    .thenComparing(app -> app.normalizedLabel)
                     .thenComparing(app -> app.component.getPackageName()));
 
             List<AppEntry> immutable = Collections.unmodifiableList(result);
             main.post(() -> callback.onLoaded(immutable));
         });
+    }
+
+    private int profileKind(UserHandle user) {
+        if (user.equals(Process.myUserHandle())) return AppEntry.PROFILE_PERSONAL;
+
+        if (Build.VERSION.SDK_INT >= 35 && launcherApps != null) {
+            try {
+                LauncherUserInfo info = launcherApps.getLauncherUserInfo(user);
+                if (info != null) {
+                    String type = info.getUserType();
+                    if (UserManager.USER_TYPE_PROFILE_PRIVATE.equals(type)) {
+                        return AppEntry.PROFILE_PRIVATE;
+                    }
+                    if (UserManager.USER_TYPE_PROFILE_MANAGED.equals(type)) {
+                        return AppEntry.PROFILE_WORK;
+                    }
+                }
+            } catch (IllegalStateException | SecurityException ignored) {
+            }
+        }
+        return AppEntry.PROFILE_WORK;
+    }
+
+    void startApp(AppEntry app) {
+        if (app == null || launcherApps == null) return;
+        launcherApps.startMainActivity(app.component, app.user, null, null);
+    }
+
+    void startAppDetails(AppEntry app) {
+        if (app == null || launcherApps == null) return;
+        launcherApps.startAppDetailsActivity(app.component, app.user, null, null);
+    }
+
+    boolean canUseShortcuts() {
+        return launcherApps != null && launcherApps.hasShortcutHostPermission();
+    }
+
+    void loadShortcuts(AppEntry app, ShortcutsCallback callback) {
+        if (app == null || launcherApps == null || !canUseShortcuts()) {
+            callback.onLoaded(Collections.emptyList());
+            return;
+        }
+
+        executor.execute(() -> {
+            List<ShortcutInfo> shortcuts;
+            try {
+                LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery()
+                        .setPackage(app.component.getPackageName())
+                        .setQueryFlags(
+                                LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
+                                        | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                        );
+                shortcuts = launcherApps.getShortcuts(query, app.user);
+                if (shortcuts == null) shortcuts = Collections.emptyList();
+            } catch (IllegalStateException | SecurityException error) {
+                shortcuts = Collections.emptyList();
+            }
+
+            ArrayList<ShortcutInfo> visible = new ArrayList<>(shortcuts.size());
+            for (ShortcutInfo shortcut : shortcuts) {
+                if (shortcut != null && shortcut.isEnabled()) visible.add(shortcut);
+            }
+            List<ShortcutInfo> immutable = Collections.unmodifiableList(visible);
+            main.post(() -> callback.onLoaded(immutable));
+        });
+    }
+
+    void startShortcut(AppEntry app, ShortcutInfo shortcut) {
+        if (app == null || shortcut == null || launcherApps == null) return;
+        launcherApps.startShortcut(
+                app.component.getPackageName(),
+                shortcut.getId(),
+                null,
+                null,
+                app.user
+        );
+    }
+
+    boolean isQuietModeEnabled(UserHandle user) {
+        return userManager != null && userManager.isQuietModeEnabled(user);
+    }
+
+    boolean requestQuietMode(boolean enabled, UserHandle user) {
+        if (userManager == null || user == null) return false;
+        try {
+            return userManager.requestQuietModeEnabled(enabled, user);
+        } catch (IllegalArgumentException | SecurityException error) {
+            return false;
+        }
     }
 
     static List<AppEntry> filter(
