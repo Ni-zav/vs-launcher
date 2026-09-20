@@ -277,3 +277,143 @@ Next research batch:
 1. check current AndroidX Benchmark / Macrobenchmark Android 16 release notes and known issues
 2. check AOSP / Android Issue Tracker for instrumentation-controller freezing on Android 16
 3. keep the existing device-wide `use_freezer=false` option only as a diagnostic candidate until measurement impact is assessed
+
+
+---
+
+## Batch 3 — AndroidX Benchmark / Android 16 check
+
+### 1. The project is already on the current stable Benchmark generation
+
+As of 2026-09-20, AndroidX Benchmark stable is:
+
+```text
+1.5.0 — released 2026-09-09
+```
+
+Primary source:
+
+- https://developer.android.com/jetpack/androidx/releases/benchmark
+
+The 1.5.0 release history includes Android/Perfetto/UiAutomator fixes and
+benchmark-safety changes, but the published release notes do **not** document a
+fix or known issue matching:
+
+```text
+Android 16 instrumentation controller enters a frozen cgroup / do_freezer_trap
+```
+
+Therefore there is currently no primary-source basis for recommending a
+Benchmark library upgrade/downgrade as the freezer workaround.
+
+Do not change Benchmark versions merely to probe this device unless the test is
+explicitly treated as an experiment and the before/after versions are recorded.
+
+### 2. Supported Benchmark instrumentation arguments do not expose a freezer exemption
+
+Android Developers documents Macrobenchmark instrumentation arguments such as:
+
+- compilation controls
+- tracing/profiling controls
+- error suppression
+- output location
+- `SideEffectRunListener`
+
+Primary source:
+
+- https://developer.android.com/topic/performance/benchmarking/macrobenchmark-instrumentation-args
+
+There is no documented Benchmark instrumentation argument that makes the
+controller process exempt from ActivityManager/cgroup freezing.
+
+### 3. `SideEffectRunListener` is useful later, but it is not this workaround
+
+Android Developers recommends:
+
+```text
+androidx.benchmark.junit4.SideEffectRunListener
+```
+
+to reduce unrelated background work during benchmark runs.
+
+That can improve measurement consistency after the controller-freeze problem is
+solved.
+
+It does **not**:
+
+- change the controller's OOM adjustment
+- create an ActivityManager freezer exemption
+- change cgroup freezer policy
+- replace the need to diagnose why an active instrumentation controller is frozen
+
+Do not present it as a fix for `frozen 1`.
+
+### 4. No matching public Android 16 issue was established in this bounded search
+
+A targeted search of the public Android Issue Tracker did not surface a
+confirmed issue matching the specific combination:
+
+```text
+Android 16
++ active instrumentation / Macrobenchmark controller
++ cgroup frozen
++ do_freezer_trap
+```
+
+Absence of a surfaced public issue is **not** evidence that the bug does not
+exist.
+
+For now the classification remains:
+
+```text
+confirmed standard mechanism: cgroup cached-app freezer exists
+confirmed abnormality: active instrumentation normally receives foreground importance
+unconfirmed root cause: Android 16 platform regression vs Infinix/XOS policy interaction
+```
+
+### 5. Capture instrumentation state at the freeze boundary
+
+The next physical-device run should answer one discriminating question:
+
+> Is `com.vslauncher.macrobenchmark` still active instrumentation in
+> ActivityManager at the exact time its cgroup reports `frozen 1`?
+
+Capture immediately when the run stalls:
+
+```sh
+PID="$(adb shell pidof com.vslauncher.macrobenchmark | tr -d '\r')"
+
+adb shell dumpsys activity instrumentation   > device-test-results/instrumentation-frozen.txt
+
+adb shell dumpsys activity processes   > device-test-results/processes-frozen.txt
+
+adb shell cat "/proc/$PID/cgroup"   > device-test-results/controller-cgroup.txt
+
+adb shell cat "/proc/$PID/status"   > device-test-results/controller-status.txt
+```
+
+Then record the actual cgroup path from `controller-cgroup.txt` and capture
+its `cgroup.events`.
+
+Interpretation:
+
+- **still active instrumentation + foreground-ish proc state + `frozen 1`**:
+  strongly inconsistent with the normal AOSP cached-process eligibility path;
+  prioritize OEM/XOS or platform regression investigation.
+- **instrumentation no longer registered / proc became cached before freeze**:
+  investigate why the instrumentation state or process importance changed;
+  this may be an AndroidX/runner lifecycle failure rather than an OEM freezer override.
+
+Do not use a frozen/stalled run as a performance sample.
+
+### Batch 3 conclusion
+
+No AndroidX configuration or current stable-version change is presently a
+documented package-scoped solution.
+
+The next research batch should focus only on:
+
+1. Infinix/XOS-specific background/freezer controls and evidence
+2. whether the global AOSP `use_freezer=false` diagnostic is acceptable for a
+   controlled benchmark session when all package-scoped remedies fail
+3. how that global change affects measurement validity and rollback
