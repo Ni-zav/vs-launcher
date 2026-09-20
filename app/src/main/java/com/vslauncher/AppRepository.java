@@ -253,7 +253,7 @@ final class AppRepository {
     }
 
     boolean requestQuietMode(boolean enabled, UserHandle user) {
-        if (userManager == null || user == null) return false;
+        if (Build.VERSION.SDK_INT < 28 || userManager == null || user == null) return false;
         try {
             return userManager.requestQuietModeEnabled(enabled, user);
         } catch (IllegalArgumentException | SecurityException error) {
