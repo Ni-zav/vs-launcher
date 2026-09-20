@@ -216,6 +216,7 @@ final class AppRepository {
                         .setQueryFlags(
                                 LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
                                         | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                                        | LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
                         );
                 shortcuts = launcherApps.getShortcuts(query, app.user);
                 if (shortcuts == null) shortcuts = Collections.emptyList();
@@ -244,6 +245,38 @@ final class AppRepository {
             );
             return true;
         } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
+            return false;
+        }
+    }
+
+    boolean startShortcut(AppEntry app, String shortcutId) {
+        if (app == null || shortcutId == null || shortcutId.isEmpty() || launcherApps == null) {
+            return false;
+        }
+        try {
+            launcherApps.startShortcut(
+                    app.component.getPackageName(),
+                    shortcutId,
+                    null,
+                    null,
+                    app.user
+            );
+            return true;
+        } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
+            return false;
+        }
+    }
+
+    boolean pinShortcuts(AppEntry app, List<String> shortcutIds) {
+        if (app == null || launcherApps == null || !canUseShortcuts()) return false;
+        try {
+            launcherApps.pinShortcuts(
+                    app.component.getPackageName(),
+                    shortcutIds,
+                    app.user
+            );
+            return true;
+        } catch (IllegalStateException | SecurityException error) {
             return false;
         }
     }
