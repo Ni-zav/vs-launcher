@@ -4,6 +4,12 @@ package com.vslauncher;
 final class LauncherLayout {
     private LauncherLayout() {}
 
+    static int alphabetBucket(String normalizedLabel) {
+        if (normalizedLabel == null || normalizedLabel.isEmpty()) return 26;
+        char first = Character.toUpperCase(normalizedLabel.charAt(0));
+        return first >= 'A' && first <= 'Z' ? first - 'A' : 26;
+    }
+
     static int visibleRows(int maxRows, float rowHeight, float start, float end) {
         if (maxRows <= 0 || rowHeight <= 0f || end <= start) return 0;
         int fit = Math.max(0, (int) Math.floor((end - start) / rowHeight));
