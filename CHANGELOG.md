@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1 — 2026-09-20
+
+### Search and clock reliability
+
+- Fixed singleton app auto-launch being permanently blocked by normal Latin Gboard composing spans. IME composition blocking is now limited to Chinese/Japanese/Korean language tags where unfinished composition is meaningful.
+- Added an 1800ms grace period for numeric-only singleton queries so long-press keyboard operators such as `+` can arrive before an incidental numeric app launches; arithmetic syntax still cancels immediately once present.
+- Added Android's documented normal `com.android.alarm.permission.SET_ALARM` permission required to invoke `ACTION_SET_TIMER` and `ACTION_SET_ALARM`.
+- Timer/alarm launch failures now surface a quiet transient `unavailable` status instead of failing silently.
+- Bumped the test build to `0.9.1` / versionCode `10`.
+
 ## 0.9.0 — 2026-09-20
 
 ### Minimal layout refinement

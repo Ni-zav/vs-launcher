@@ -159,10 +159,10 @@ Before merging launcher behavior/rendering changes:
 8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
 9. Verify the rail is ordered `#–Z`, every glyph is centered on one fixed axis, unavailable touches snap to the actual available bucket, matching apps brighten, unrelated apps dim, and release restores normal luminance.
 10. Test accent/punctuation normalization plus prefix/alias/initials/substring/bounded-fuzzy ordering.
-11. Verify singleton sequences: `sho` stopped → app after the quiet window; `sho → shou` → pending launch cancelled; exact app/alias → faster launch; composing IME text never fires; a leading-space query never auto-fires.
+11. Verify singleton sequences: `sho` stopped → app after the quiet window; `sho → shou` → pending launch cancelled; exact app/alias → faster launch; English/Latin Gboard composing spans still allow launch; Chinese/Japanese/Korean composition does not auto-fire; numeric-only `1` remains pending long enough to long-press `+`; a leading-space query never auto-fires.
 12. Verify typed search follows the cached normalized-query path.
 13. Verify passive SYSTEM rows remain behind apps, while explicit DIAL/OPEN/TIMER/ALARM/CALC/WEB rows take first-result priority and execute only after deliberate tap/Go.
-14. Verify `timer 10m`, `timer 1h 30m`, and `alarm 07:30` produce deliberate TIMER/ALARM rows.
+14. Verify `timer 10m`, `timer 1h 30m`, and `alarm 07:30` produce deliberate TIMER/ALARM rows and actually create the timer/alarm through the installed clock app. Confirm a failed clock intent shows `Timer unavailable` / `Alarm unavailable` instead of silently doing nothing.
 15. Verify `1 → 1+ → 1+1` cannot accidentally launch a numeric app: `1+` blocks app commit before CALC is complete, `1+1` puts CALC first, and parentheses/divide-by-zero/copy feedback remain correct.
 16. Verify unmatched text produces one WEB fallback; sentence-like multi-word text with only weak app matches also exposes WEB first, while strong multi-word app prefixes such as `google ma` stay app-like. VS itself performs no network request.
 17. Type `help` and open Settings → HELP → How to use; confirm both expose the same interaction model.

@@ -48,7 +48,7 @@ After the workflow is green:
 Inside it is:
 
 ```text
-VS-Launcher-0.9.0-debug.apk
+VS-Launcher-0.9.1-debug.apk
 ```
 
 The artifact is retained for 14 days.
@@ -142,7 +142,7 @@ The script:
 Output:
 
 ```text
-dist/VS-Launcher-0.9.0-debug.apk
+dist/VS-Launcher-0.9.1-debug.apk
 ```
 
 The raw Android Gradle output also remains at:
@@ -156,14 +156,14 @@ app/build/outputs/apk/debug/app-debug.apk
 Enable Developer Options + USB debugging on the phone, connect it, then:
 
 ```sh
-adb install -r dist/VS-Launcher-0.9.0-debug.apk
+adb install -r dist/VS-Launcher-0.9.1-debug.apk
 ```
 
 If the installed copy was signed with a different key, uninstall it first:
 
 ```sh
 adb uninstall com.vslauncher
-adb install dist/VS-Launcher-0.9.0-debug.apk
+adb install dist/VS-Launcher-0.9.1-debug.apk
 ```
 
 Then press Home and select VS Launcher.
@@ -236,7 +236,7 @@ mkdir -p dist
 "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
   -f -p 4 \
   app/build/outputs/apk/release/app-release-unsigned.apk \
-  dist/VS-Launcher-0.9.0-aligned.apk
+  dist/VS-Launcher-0.9.1-aligned.apk
 ```
 
 If your SDK uses `ANDROID_SDK_ROOT` instead:
@@ -251,8 +251,8 @@ If your SDK uses `ANDROID_SDK_ROOT` instead:
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
   --ks vs-launcher-release.jks \
   --ks-key-alias vslauncher \
-  --out dist/VS-Launcher-0.9.0.apk \
-  dist/VS-Launcher-0.9.0-aligned.apk
+  --out dist/VS-Launcher-0.9.1.apk \
+  dist/VS-Launcher-0.9.1-aligned.apk
 ```
 
 Leave the password options off the command line so `apksigner` can prompt you instead of placing passwords in shell history.
@@ -263,19 +263,19 @@ Leave the password options off the command line so `apksigner` can prompt you in
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
   --verbose \
   --print-certs \
-  dist/VS-Launcher-0.9.0.apk
+  dist/VS-Launcher-0.9.1.apk
 ```
 
 The installable release APK is now:
 
 ```text
-dist/VS-Launcher-0.9.0.apk
+dist/VS-Launcher-0.9.1.apk
 ```
 
 Install it by opening it on the phone or with:
 
 ```sh
-adb install -r dist/VS-Launcher-0.9.0.apk
+adb install -r dist/VS-Launcher-0.9.1.apk
 ```
 
 Every future release that should update this installation must be signed with the same `vs-launcher-release.jks`.
