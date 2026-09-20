@@ -342,8 +342,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (profile.kind == AppEntry.PROFILE_PRIVATE && !privateVisible) continue;
 
             String value = "";
-            if (profile.quiet) {
-                value = profile.kind == AppEntry.PROFILE_PRIVATE ? "LOCKED" : "PAUSED";
+            if (profile.kind == AppEntry.PROFILE_PRIVATE) {
+                value = profile.quiet ? "LOCKED" : "LOCK";
+            } else if (profile.kind == AppEntry.PROFILE_WORK) {
+                value = profile.quiet ? "PAUSED" : "PAUSE";
             }
             rows.add(AppListItem.profile(
                     profile.kind,
@@ -370,7 +372,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         for (int index = 0; index < maxHomeApps; index++) {
             String componentName = launcherPreferences.homeSlot(index);
-            AppEntry entry = findApp(componentName);
+            AppEntry entry = findHomeEligibleApp(componentName);
 
             if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
                 entry = firstUnusedApp(used);
@@ -391,7 +393,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         String quickComponent = launcherPreferences.quickApp();
-        quickApp = findApp(quickComponent);
+        quickApp = findHomeEligibleApp(quickComponent);
         String quickLabel;
         if (quickApp != null) {
             quickLabel = quickApp.label;
@@ -413,6 +415,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry firstUnusedApp(Set<String> used) {
         for (AppEntry app : apps) {
+            if (app.profileKind == AppEntry.PROFILE_PRIVATE) continue;
             String component = app.componentKey;
             if (!used.contains(component)) return app;
         }
@@ -422,6 +425,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private AppEntry findApp(String flattenedComponent) {
         if (flattenedComponent == null || flattenedComponent.isEmpty()) return null;
         return appByComponent.get(flattenedComponent);
+    }
+
+    private AppEntry findHomeEligibleApp(String componentKey) {
+        AppEntry app = findApp(componentKey);
+        return app != null && app.profileKind != AppEntry.PROFILE_PRIVATE ? app : null;
+    }
+
+    private List<AppEntry> homeEligibleApps() {
+        ArrayList<AppEntry> eligible = new ArrayList<>(allApps.size());
+        for (AppEntry app : allApps) {
+            if (app.profileKind != AppEntry.PROFILE_PRIVATE) eligible.add(app);
+        }
+        return eligible;
     }
 
     private void registerPackageChanges() {
@@ -713,7 +729,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         int shortcutActionCount = actions.size();
-        actions.add("Add to Home");
+        if (app.profileKind != AppEntry.PROFILE_PRIVATE) actions.add("Add to Home");
         actions.add("Hide");
         actions.add("App info");
         if (app.isPersonal()) actions.add("Uninstall");
@@ -951,15 +967,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showHomeAppPicker(int slot) {
-        if (allApps.isEmpty()) return;
+        List<AppEntry> eligible = homeEligibleApps();
+        if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).pickerLabel();
+        CharSequence[] labels = new CharSequence[eligible.size()];
+        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
-                    AppEntry selected = allApps.get(which);
+                    AppEntry selected = eligible.get(which);
                     launcherPreferences.setHomeSlot(
                             slot,
                             selected.componentKey
@@ -1050,15 +1067,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showQuickAppPicker() {
-        if (allApps.isEmpty()) return;
+        List<AppEntry> eligible = homeEligibleApps();
+        if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).pickerLabel();
+        CharSequence[] labels = new CharSequence[eligible.size()];
+        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
-                    AppEntry selected = allApps.get(which);
+                    AppEntry selected = eligible.get(which);
                     launcherPreferences.setQuickApp(selected.componentKey);
                     resolveLauncherConfiguration();
                 })
