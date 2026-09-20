@@ -1072,3 +1072,207 @@ The helper deliberately does **not**:
 - automatically run performance benchmarks before the device stabilizes
 - declare a profile beneficial
 - automatically commit generated profile rules
+
+
+---
+
+## Batch 8 — ranked recommendation
+
+### Root-cause position
+
+Current evidence does **not** justify claiming one of these as proven:
+
+- generic Android 16 regression
+- Infinix/XOS bug
+- AndroidX Macrobenchmark bug
+
+What is established:
+
+1. the controller really enters a frozen cgroup when cgroup.events reports
+   frozen 1
+2. standard AOSP cached-process freezing exists
+3. active instrumentation normally receives elevated foreground importance
+4. AndroidX Benchmark 1.5.0 has no documented fix matching this symptom
+5. common package/background exemptions already failed on the X6855
+6. XOS 16 has anecdotal reports of unusually aggressive background handling,
+   but these reports are not equivalent to this instrumentation failure
+
+The cleanest way to separate platform from vendor behavior is a control run of
+the same benchmark APK/test APK on another physical Android 16 device whose
+software is close to AOSP (for example a Pixel).
+
+Interpretation:
+
+- reproduces on independent Android 16/AOSP-like device -> Android platform or
+  AndroidX interaction becomes more likely
+- reproduces only on XOS/Infinix -> OEM policy interaction becomes substantially
+  more likely
+- do not use emulator performance numbers for this comparison; the control is
+  about controller survivability/freezer behavior, not timing
+
+### Ranked workaround order
+
+#### Rank 1 — capture the frozen state before changing policy
+
+At the failure point:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh verify
+~~~
+
+Required evidence:
+
+- live controller PID
+- active instrumentation registration
+- process/cgroup state
+- cgroup.events
+- ActivityManager state
+
+This has no measurement impact.
+
+#### Rank 2 — exact-PID sticky unfreeze
+
+After the final controller PID exists:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh sticky
+~~~
+
+Scope:
+
+~~~text
+one controller process lifetime
+~~~
+
+Reboot:
+
+~~~text
+no
+~~~
+
+Measurement impact:
+
+- narrowest available supported intervention
+- still changes controller freezer behavior
+- does not change target app compilation mode
+- if it works, use the same controller treatment for every A/B arm
+
+If the controller PID is recreated, the sticky state must be reapplied.
+
+#### Rank 3 — temporary AOSP global freezer disable
+
+Only if Rank 2 fails against the same live PID:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh disable --yes
+~~~
+
+Scope:
+
+~~~text
+device-wide cached-app freezer
+~~~
+
+Reboot:
+
+~~~text
+required
+~~~
+
+Risk:
+
+- unrelated cached apps may run rather than being frozen
+- background CPU/resource contention can differ from normal device behavior
+- absolute timing is therefore not representative of the untouched phone
+
+Use this first to unblock:
+
+- Macrobenchmark controller survivability diagnosis
+- Baseline Profile generation
+
+Then restore:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh restore <RESULT_DIR>
+~~~
+
+and reboot before attempting normal-device performance measurement.
+
+#### Rank 4 — controlled A/B with freezer disabled only when normal measurement is impossible
+
+Preferred:
+
+~~~text
+generate candidate with freezer disabled if necessary
+→ restore freezer
+→ measure A and B normally
+~~~
+
+Fallback:
+
+~~~text
+freezer disabled for A
+freezer disabled for B
+same device/build/refresh/thermal preparation
+~~~
+
+Never compare:
+
+~~~text
+A enabled vs B disabled
+~~~
+
+Measurement conclusion must be explicitly scoped to the modified environment.
+
+#### Not recommended
+
+Do not use these as the primary solution:
+
+- freeze_exempt_inst_pkg=true
+  - this means INSTALL_PACKAGES exemption, not instrumentation
+- fake/permanent foreground service in the benchmark controller
+  - changes architecture/process importance and already failed experimentally
+- undocumented XOS shell flags
+  - scope/rollback/measurement effect are unknown
+- repeated battery-unrestricted / DeviceIdle / inactive-state tweaks
+  - already tested without solving the freeze
+- moving Macrobenchmark in-process
+  - invalidates Macrobenchmark's required out-of-process architecture
+
+### Commit gate for Baseline Profile
+
+Do not commit generated profile rules until:
+
+1. generation completes reproducibly
+2. the candidate is packaged in the release-like benchmark variant
+3. CompilationMode.Partial(BaselineProfileMode.Require) succeeds
+4. A and B use identical freezer policy
+5. repeated measurements show benefit or at minimum no meaningful regression
+6. raw JSON and Perfetto traces are preserved
+7. the device-test report records whether the freezer workaround was active
+8. any global freezer change is rolled back and verified afterward
+
+### Recommended next physical-device sequence
+
+~~~text
+1. Start the failing instrumentation normally.
+2. At stall, run freezer-session.sh verify.
+3. Confirm whether the same PID is active instrumentation + frozen 1.
+4. Restart test.
+5. After final controller PID appears, run freezer-session.sh sticky.
+6. If same PID still freezes, save evidence.
+7. Run freezer-session.sh disable --yes.
+8. Reboot/stabilize.
+9. Run Baseline Profile generation.
+10. Run Macrobenchmark survivability check.
+11. Restore freezer immediately after the diagnostic/generation session.
+12. Reboot/stabilize.
+13. Try normal-policy A/B.
+14. Only if normal-policy benchmark still freezes, repeat both A and B under
+    identical freezer-disabled state and label the limitation.
+15. Restore/verify again.
+~~~
+
+This sequence minimizes device-wide modification while still producing useful
+evidence if XOS cannot sustain the instrumentation controller under normal
+policy.
