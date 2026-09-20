@@ -44,4 +44,10 @@ final class QueryActions {
                 ? value
                 : "https://" + value;
     }
+
+    static boolean shouldOfferWebFallback(String normalizedQuery, int existingResultCount) {
+        return existingResultCount == 0
+                && normalizedQuery != null
+                && normalizedQuery.length() >= 2;
+    }
 }

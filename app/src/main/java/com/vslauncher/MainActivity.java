@@ -745,7 +745,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             String calculation = CalculatorAction.evaluate(rawQuery);
             if (calculation != null) results.add(SearchResult.calculation(calculation));
 
-            if (results.isEmpty() && normalizedQuery.length() >= 2) {
+            if (QueryActions.shouldOfferWebFallback(normalizedQuery, results.size())) {
                 results.add(SearchResult.web(rawQuery.trim()));
             }
         }
