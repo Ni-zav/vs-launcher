@@ -100,7 +100,6 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
-    private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
     private final Paint statusFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
     private final Paint batteryFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
@@ -1069,13 +1068,6 @@ final class LauncherSurface extends View {
             );
         }
 
-        canvas.drawRect(
-                x,
-                y + rowHeightPx - dividerThicknessPx,
-                right,
-                y + rowHeightPx,
-                dividerPaint
-        );
     }
 
     private String settingsLabel(int index) {
