@@ -735,61 +735,51 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         ArrayList<SearchResult> results = new ArrayList<>(
                 appMatches.size() + 7
         );
-        for (AppEntry app : appMatches) results.add(SearchResult.app(app));
 
-        if (!normalizedQuery.isEmpty()) {
-            int firstAppRank = appMatches.isEmpty()
-                    ? SearchRanking.NO_MATCH
-                    : appMatchRank(appMatches.get(0), normalizedQuery);
-
-            // Passive SYSTEM commands remain after apps. Explicit structured
-            // intent is inserted first so Go/Enter never sacrifices CALC,
-            // TIMER/ALARM, DIAL, OPEN or deliberate WEB behavior.
-            for (SearchCommand command : SearchCommand.matchingNormalized(normalizedQuery)) {
-                results.add(SearchResult.command(command));
-            }
-
-            int nonAppResultCount = results.size() - appMatches.size();
-
-            String dial = QueryActions.dialPayload(rawQuery);
-            if (dial != null) {
-                results.add(0, SearchResult.dial(dial));
-                nonAppResultCount++;
-            }
-
-            String url = QueryActions.urlPayload(rawQuery);
-            if (url != null) {
-                results.add(0, SearchResult.url(url));
-                nonAppResultCount++;
-            }
-
-            TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
-            if (timer != null) {
-                results.add(0, SearchResult.timer(timer));
-                nonAppResultCount++;
-            }
-
-            TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
-            if (alarm != null) {
-                results.add(0, SearchResult.alarm(alarm));
-                nonAppResultCount++;
-            }
-
-            String calculation = CalculatorAction.evaluate(rawQuery);
-            if (calculation != null) {
-                results.add(0, SearchResult.calculation(calculation));
-                nonAppResultCount++;
-            }
-
-            if (SearchAutoLaunchPolicy.shouldOfferWebFallback(
-                    normalizedQuery,
-                    appMatches.size(),
-                    firstAppRank,
-                    nonAppResultCount
-            )) {
-                results.add(0, SearchResult.web(rawQuery.trim()));
-            }
+        if (normalizedQuery.isEmpty()) {
+            for (AppEntry app : appMatches) results.add(SearchResult.app(app));
+            return results.isEmpty()
+                    ? Collections.emptyList()
+                    : Collections.unmodifiableList(results);
         }
+
+        int firstAppRank = appMatches.isEmpty()
+                ? SearchRanking.NO_MATCH
+                : appMatchRank(appMatches.get(0), normalizedQuery);
+        List<SearchCommand> commands = SearchCommand.matchingNormalized(normalizedQuery);
+
+        String dial = QueryActions.dialPayload(rawQuery);
+        String url = QueryActions.urlPayload(rawQuery);
+        TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
+        TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
+        String calculation = CalculatorAction.evaluate(rawQuery);
+
+        int nonAppResultCount = commands.size();
+        if (dial != null) nonAppResultCount++;
+        if (url != null) nonAppResultCount++;
+        if (timer != null) nonAppResultCount++;
+        if (alarm != null) nonAppResultCount++;
+        if (calculation != null) nonAppResultCount++;
+
+        boolean web = SearchAutoLaunchPolicy.shouldOfferWebFallback(
+                normalizedQuery,
+                appMatches.size(),
+                firstAppRank,
+                nonAppResultCount
+        );
+
+        // Explicit structured intent is emitted before app rows without
+        // front-inserting/shifting the app list. Passive SYSTEM commands
+        // remain after apps.
+        if (web) results.add(SearchResult.web(rawQuery.trim()));
+        if (calculation != null) results.add(SearchResult.calculation(calculation));
+        if (alarm != null) results.add(SearchResult.alarm(alarm));
+        if (timer != null) results.add(SearchResult.timer(timer));
+        if (url != null) results.add(SearchResult.url(url));
+        if (dial != null) results.add(SearchResult.dial(dial));
+
+        for (AppEntry app : appMatches) results.add(SearchResult.app(app));
+        for (SearchCommand command : commands) results.add(SearchResult.command(command));
 
         return results.isEmpty()
                 ? Collections.emptyList()

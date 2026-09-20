@@ -175,16 +175,30 @@ for required in (
         errors.append(f"Search actions must reuse the cached normalized query: missing {required}")
 
 for required in (
-    "results.add(0, SearchResult.calculation",
-    "results.add(0, SearchResult.timer",
-    "results.add(0, SearchResult.alarm",
-    "results.add(0, SearchResult.url",
-    "results.add(0, SearchResult.dial",
-    "results.add(0, SearchResult.web",
+    "results.add(SearchResult.calculation",
+    "results.add(SearchResult.timer",
+    "results.add(SearchResult.alarm",
+    "results.add(SearchResult.url",
+    "results.add(SearchResult.dial",
+    "results.add(SearchResult.web",
     "SearchAutoLaunchPolicy.shouldOfferWebFallback(",
 ):
     if required not in build_results:
         errors.append(f"Explicit structured intent must retain result priority: missing {required}")
+
+app_emit = build_results.find("for (AppEntry app : appMatches)")
+for structured in (
+    "results.add(SearchResult.calculation",
+    "results.add(SearchResult.timer",
+    "results.add(SearchResult.alarm",
+    "results.add(SearchResult.url",
+    "results.add(SearchResult.dial",
+    "results.add(SearchResult.web",
+):
+    if build_results.find(structured) > app_emit:
+        errors.append("Structured intent must be emitted before app rows")
+if "results.add(0," in build_results:
+    errors.append("Structured intent priority must not shift an existing app ArrayList")
 
 for utility in (
     "QueryActions.java",
