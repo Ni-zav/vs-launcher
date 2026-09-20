@@ -18,6 +18,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
+import android.provider.AlarmClock;
+import android.provider.CalendarContract;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
@@ -959,6 +961,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             startActivity(intent);
         } catch (ActivityNotFoundException | SecurityException error) {
             reloadApps();
+        }
+    }
+
+    @Override public void onClockTapped() {
+        launchExternalIntent(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
+    }
+
+    @Override public void onDateTapped() {
+        Uri uri = CalendarContract.CONTENT_URI.buildUpon()
+                .appendPath("time")
+                .appendPath(Long.toString(System.currentTimeMillis()))
+                .build();
+        launchExternalIntent(new Intent(Intent.ACTION_VIEW, uri));
+    }
+
+    @Override public void onBatteryTapped() {
+        Intent primary = new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS);
+        if (!launchExternalIntent(primary)) {
+            launchExternalIntent(new Intent(Settings.ACTION_BATTERY_SETTINGS));
+        }
+    }
+
+    private boolean launchExternalIntent(Intent intent) {
+        try {
+            startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException error) {
+            return false;
         }
     }
 
