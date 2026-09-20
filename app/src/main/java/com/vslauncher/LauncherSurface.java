@@ -195,6 +195,7 @@ final class LauncherSurface extends View {
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
     private float settingsSectionHeaderHeightPx;
+    private float profileHeaderLeadPx;
     private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
     private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
     private final String[] settingsValues = new String[SETTINGS_ROW_COUNT];
@@ -672,6 +673,7 @@ final class LauncherSurface extends View {
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
         settingsSectionHeaderHeightPx = dp(28f);
+        profileHeaderLeadPx = dp(DesignTokens.PROFILE_HEADER_LEAD_DP);
         recalculateSettingsGeometry();
 
         float defaultHomeStart = contentTopPx + dp(164f);
@@ -1000,17 +1002,18 @@ final class LauncherSurface extends View {
                         pressed ? appPressedPaint : appPaint
                 );
             } else {
+                float profileBaseline = rowTop + baselineOffset + profileHeaderLeadPx;
                 canvas.drawText(
                         item.label,
                         x,
-                        rowTop + baselineOffset,
+                        profileBaseline,
                         pressed ? metaPressedPaint : labelPaint
                 );
                 if (!item.value.isEmpty()) {
                     canvas.drawText(
                             item.value,
                             right - browseValueWidths[i],
-                            rowTop + baselineOffset,
+                            profileBaseline,
                             pressed ? metaPressedPaint : metaPaint
                     );
                 }
