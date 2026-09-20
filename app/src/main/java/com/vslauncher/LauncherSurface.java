@@ -54,7 +54,7 @@ final class LauncherSurface extends View {
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
-        void onSearchGestureRequested();
+        void onAppsBrowseGestureStarted();
         void onSettingAction(int action);
         void onWeatherTapped();
     }
@@ -934,6 +934,9 @@ final class LauncherSurface extends View {
                     gestureMode = Math.abs(totalDx) > Math.abs(totalDy)
                             ? GESTURE_HORIZONTAL
                             : GESTURE_VERTICAL;
+                    if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
+                        host.onAppsBrowseGestureStarted();
+                    }
                 }
 
                 if (gestureMode == GESTURE_HORIZONTAL) {
@@ -1071,8 +1074,6 @@ final class LauncherSurface extends View {
 
         if (dy < -gestureThresholdPx) {
             host.onQuickLaunchRequested();
-        } else if (dy > gestureThresholdPx) {
-            host.onSearchGestureRequested();
         }
     }
 
