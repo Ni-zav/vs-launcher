@@ -79,6 +79,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private List<AppEntry> allApps = Collections.emptyList();
     private List<AppEntry> apps = Collections.emptyList();
+    private List<LauncherProfile> launcherProfiles = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private Map<String, String> aliases = Collections.emptyMap();
     private Map<String, String> normalizedAliases = Collections.emptyMap();
@@ -276,8 +277,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void reloadApps() {
-        appRepository.load(loaded -> {
+        appRepository.load((loaded, profiles) -> {
             allApps = loaded;
+            launcherProfiles = profiles;
             HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
             for (AppEntry app : loaded) {
                 index.put(app.componentKey, app);
@@ -310,14 +312,52 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void refreshVisibleApps() {
         Set<String> hidden = launcherPreferences.hiddenComponents();
+        boolean privateVisible = launcherPreferences.privateSpaceVisible();
         ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
         for (AppEntry app : allApps) {
-            if (!hidden.contains(app.componentKey)) visible.add(app);
+            if (hidden.contains(app.componentKey)) continue;
+            if (app.profileKind == AppEntry.PROFILE_PRIVATE && !privateVisible) continue;
+            visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
         filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
         surface.setApps(apps, filteredApps);
+        surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
+    }
+
+    private List<AppListItem> buildBrowseItems() {
+        ArrayList<AppListItem> rows = new ArrayList<>(apps.size() + launcherProfiles.size());
+
+        for (AppEntry app : apps) {
+            if (app.profileKind == AppEntry.PROFILE_PERSONAL) {
+                rows.add(AppListItem.app(app));
+            }
+        }
+
+        boolean privateVisible = launcherPreferences.privateSpaceVisible();
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == AppEntry.PROFILE_PERSONAL) continue;
+            if (profile.kind == AppEntry.PROFILE_PRIVATE && !privateVisible) continue;
+
+            String value = "";
+            if (profile.quiet) {
+                value = profile.kind == AppEntry.PROFILE_PRIVATE ? "LOCKED" : "PAUSED";
+            }
+            rows.add(AppListItem.profile(
+                    profile.kind,
+                    profile.serial,
+                    profile.label(),
+                    value
+            ));
+
+            if (profile.quiet) continue;
+            for (AppEntry app : apps) {
+                if (app.userSerial == profile.serial) rows.add(AppListItem.app(app));
+            }
+        }
+
+        return Collections.unmodifiableList(rows);
     }
 
     private void resolveLauncherConfiguration() {
@@ -701,6 +741,28 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .show();
     }
 
+    @Override public void onProfileHeaderTapped(int profileKind, long profileSerial) {
+        LauncherProfile profile = findProfile(profileKind, profileSerial);
+        if (profile == null) return;
+
+        appRepository.requestQuietMode(!profile.quiet, profile.user);
+        mainHandler.postDelayed(this::reloadApps, 500L);
+    }
+
+    private LauncherProfile findProfile(int kind, long serial) {
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == kind && profile.serial == serial) return profile;
+        }
+        return null;
+    }
+
+    private boolean hasPrivateProfile() {
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == AppEntry.PROFILE_PRIVATE) return true;
+        }
+        return false;
+    }
+
     @Override public void onHomeMaxChanged(int requestedMax) {
         int safeMax = clamp(
                 requestedMax,
@@ -1072,31 +1134,44 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showHiddenAppsManager() {
-        if (allApps.isEmpty()) return;
+        boolean hasPrivate = hasPrivateProfile();
+        int offset = hasPrivate ? 1 : 0;
+        int count = allApps.size() + offset;
+        if (count == 0) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        boolean[] checked = new boolean[allApps.size()];
+        CharSequence[] labels = new CharSequence[count];
+        boolean[] checked = new boolean[count];
+
+        if (hasPrivate) {
+            labels[0] = "Hide Private Space";
+            checked[0] = !launcherPreferences.privateSpaceVisible();
+        }
+
         for (int i = 0; i < allApps.size(); i++) {
             AppEntry app = allApps.get(i);
-            labels[i] = app.label;
-            checked[i] = launcherPreferences.isHidden(app.componentKey);
+            labels[i + offset] = app.pickerLabel();
+            checked[i + offset] = launcherPreferences.isHidden(app.componentKey);
         }
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Hidden apps")
                 .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
-                    AppEntry app = allApps.get(which);
-                    launcherPreferences.setHidden(
-                            app.componentKey,
-                            isChecked
-                    );
+                    if (hasPrivate && which == 0) {
+                        launcherPreferences.setPrivateSpaceVisible(!isChecked);
+                        return;
+                    }
+
+                    int appIndex = which - offset;
+                    if (appIndex < 0 || appIndex >= allApps.size()) return;
+                    AppEntry app = allApps.get(appIndex);
+                    launcherPreferences.setHidden(app.componentKey, isChecked);
                 })
                 .setPositiveButton("Done", (picker, which) -> {
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", (picker, which) -> {
-                    // Choices apply immediately; rebuild state so the screen is always consistent.
+                    // Choices apply immediately; rebuild state so the screen is consistent.
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })
