@@ -382,6 +382,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 String alias = aliases.get(component);
                 labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
                 used.add(component);
+            } else if (componentName != null && !componentName.isEmpty()) {
+                labels.add(unavailableHomeLabel(componentName));
             } else {
                 labels.add("");
             }
@@ -406,6 +408,27 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 quickLabel
         );
         surface.setHiddenAppCount(launcherPreferences.hiddenComponents().size());
+    }
+
+    private String unavailableHomeLabel(String componentKey) {
+        int marker = componentKey.lastIndexOf("@u");
+        if (marker >= 0 && marker + 2 < componentKey.length()) {
+            try {
+                long serial = Long.parseLong(componentKey.substring(marker + 2));
+                for (LauncherProfile profile : launcherProfiles) {
+                    if (profile.serial != serial) continue;
+                    if (profile.kind == AppEntry.PROFILE_WORK && profile.quiet) {
+                        return "Work paused";
+                    }
+                    if (profile.kind == AppEntry.PROFILE_PRIVATE) {
+                        return "Private app unavailable";
+                    }
+                    return "Profile unavailable";
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return "App unavailable";
     }
 
     private AppEntry firstUnusedApp(Set<String> used) {
