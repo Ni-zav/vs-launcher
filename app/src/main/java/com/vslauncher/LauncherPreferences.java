@@ -226,8 +226,15 @@ final class LauncherPreferences {
     }
 
     void setTextSize(String value) {
-        prefs.edit().putString(HOME_TEXT_SIZE,
-                oneOf(value, TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE)).apply();
+        SharedPreferences.Editor edit = prefs.edit();
+        if (!prefs.contains(APPS_TEXT_SIZE)) {
+            // Preserve the pre-0.9 shared text size when Home typography is first changed.
+            edit.putString(APPS_TEXT_SIZE, textSize());
+        }
+        edit.putString(
+                HOME_TEXT_SIZE,
+                oneOf(value, TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE)
+        ).apply();
     }
 
     String appsTextSize() {

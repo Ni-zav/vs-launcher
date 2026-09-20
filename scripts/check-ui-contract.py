@@ -211,6 +211,10 @@ ui_config_source = (MAIN_SRC / "com/vslauncher/LauncherUiConfig.java").read_text
 for required in ("ALIGN_LEFT", "ALIGN_CENTER", "ALIGN_RIGHT", "DENSITY_DENSE", "APPS_TEXT_SIZE"):
     if required not in prefs_source:
         errors.append(f"Missing minimal layout preference {required}")
+set_text_size = method_body(prefs_source, "setTextSize")
+if "prefs.contains(APPS_TEXT_SIZE)" not in set_text_size:
+    errors.append("First Home text-size change must freeze the legacy shared Apps text size")
+
 if "return 38f;" not in ui_config_source:
     errors.append("Dense row-height preset must remain 38dp")
 
