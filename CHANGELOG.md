@@ -67,13 +67,14 @@
 - Private Space can be hidden from the existing Hidden apps manager and adds no setting when no private profile exists.
 - Private Space apps are not eligible for persistent Home slots or swipe-up quick launch.
 - Profile quiet/lock toggles use Android `UserManager.requestQuietModeEnabled()` on supported API levels.
+- Paused work-profile Home assignments remain visibly reserved as `Work paused` instead of becoming false empty slots.
 - Added `LauncherApps.Callback` and profile lifecycle refresh handling.
 - Added pure-Java `ProfilePolicy` with JVM tests for privacy, visibility, and Home persistence rules.
 
 ### Canvas / performance
 
 - Added flat `AppListItem` rows so profile containers stay inside the existing Canvas list rather than creating nested Views.
-- A–Z rail widths and letter indices are cached outside draw-time.
+- A–Z rail widths and letter indices are cached outside draw-time and its spacing is derived from the live Apps viewport so A–Z always fits.
 - Search and browse Apps layouts have distinct cached viewports.
 - Extended the source architecture contract to `drawBrowseRows` and `drawAlphabetRail`.
 - CI now rejects `LauncherApps` access from `LauncherSurface`.
