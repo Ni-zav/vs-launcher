@@ -142,7 +142,7 @@ for forbidden in (
     if forbidden in production_text:
         errors.append(f"Production UI must remain framework-light; found {forbidden}")
 
-for required in ('"HOME"', '"STATUS"', '"GESTURES"', '"APPS"', '"DATA"'):
+for required in ('"HOME"', '"STATUS"', '"GESTURES"', '"APPS"', '"DATA"', '"HELP"'):
     if required not in surface:
         errors.append(f"Missing Settings section label {required}")
 

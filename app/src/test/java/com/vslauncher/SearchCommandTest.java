@@ -18,6 +18,13 @@ public final class SearchCommandTest {
         assertTrue(SearchCommand.matching("w").isEmpty());
     }
 
+    @Test public void helpRemainsLatentAndSearchable() {
+        assertTrue(SearchCommand.matchingNormalized("help").stream()
+                .anyMatch(command -> SearchCommand.HELP.equals(command.id)));
+        assertTrue(SearchCommand.matchingNormalized("how to").stream()
+                .anyMatch(command -> SearchCommand.HELP.equals(command.id)));
+    }
+
     @Test public void preNormalizedCommandPathAvoidsRenormalizationContract() {
         assertTrue(SearchCommand.matchingNormalized("blu").stream()
                 .anyMatch(command -> SearchCommand.BLUETOOTH.equals(command.id)));

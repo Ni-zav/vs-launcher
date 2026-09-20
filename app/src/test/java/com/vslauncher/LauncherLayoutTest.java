@@ -43,9 +43,9 @@ public final class LauncherLayoutTest {
     }
 
     @Test public void sectionedSettingsRowsNeverOverlap() {
-        float[] rows = new float[19];
-        float[] sections = new float[5];
-        int[] starts = {0, 4, 13, 16, 17};
+        float[] rows = new float[20];
+        float[] sections = new float[6];
+        int[] starts = {0, 4, 13, 16, 17, 19};
 
         LauncherLayout.fillSectionedRows(
                 rows,
@@ -66,6 +66,7 @@ public final class LauncherLayoutTest {
         assertTrue(rows[13] > rows[12] + 54f);
         assertTrue(rows[16] > rows[15] + 54f);
         assertTrue(rows[17] > rows[16] + 54f);
+        assertTrue(rows[19] > rows[18] + 54f);
     }
 
     @Test public void visibleRangeIsClamped() {

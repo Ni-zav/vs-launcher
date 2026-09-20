@@ -38,12 +38,13 @@ final class LauncherSurface extends View {
     static final int ACTION_HIDDEN_APPS = 15;
     static final int ACTION_EXPORT_CONFIG = 16;
     static final int ACTION_IMPORT_CONFIG = 17;
+    static final int ACTION_HELP = 18;
 
-    private static final int SETTINGS_ROW_COUNT = 19;
-    private static final int SETTINGS_SECTION_COUNT = 5;
-    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17};
+    private static final int SETTINGS_ROW_COUNT = 20;
+    private static final int SETTINGS_SECTION_COUNT = 6;
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17, 19};
     private static final String[] SETTINGS_SECTION_LABELS = {
-            "HOME", "STATUS", "GESTURES", "APPS", "DATA"
+            "HOME", "STATUS", "GESTURES", "APPS", "DATA", "HELP"
     };
 
     interface Host {
@@ -1096,6 +1097,7 @@ final class LauncherSurface extends View {
             case 16: return "Hidden apps";
             case 17: return "Export config";
             case 18: return "Import config";
+            case 19: return "How to use";
             default: return "";
         }
     }
@@ -1133,6 +1135,7 @@ final class LauncherSurface extends View {
                 case 14: value = titleCase(uiConfig.animationSpeed); break;
                 case 15: value = onOff(uiConfig.haptics); break;
                 case 16: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
+                case 19: value = "Guide"; break;
                 default: value = ""; break;
             }
             settingsValues[index] = value;
@@ -1576,6 +1579,7 @@ final class LauncherSurface extends View {
             case 16: host.onSettingAction(ACTION_HIDDEN_APPS); break;
             case 17: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
             case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            case 19: host.onSettingAction(ACTION_HELP); break;
             default: break;
         }
     }

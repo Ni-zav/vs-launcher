@@ -908,6 +908,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
                 }
                 break;
+            case SearchCommand.HELP:
+                showHowToUseDialog();
+                break;
             default:
                 break;
         }
@@ -1187,6 +1190,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 return;
             case LauncherSurface.ACTION_IMPORT_CONFIG:
                 importConfiguration();
+                return;
+            case LauncherSurface.ACTION_HELP:
+                showHowToUseDialog();
                 return;
             default:
                 return;
@@ -1620,6 +1626,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (values[i].equals(current)) return values[(i + 1) % values.length];
         }
         return values[0];
+    }
+
+    private void showHowToUseDialog() {
+        String guide =
+                "HOME\n"
+                        + "Swipe left: search · right: settings · up: quick app\n"
+                        + "Tap time/date/battery/weather for their native actions.\n\n"
+                        + "SEARCH\n"
+                        + "Type an app name. One stable app result opens automatically.\n"
+                        + "Go/Enter runs the first result. Useful queries:\n"
+                        + "timer 10m · alarm 07:30 · 23*17 · wifi · example.com\n"
+                        + "Type help to reopen this guide.\n\n"
+                        + "APPS\n"
+                        + "Start scrolling search to enter browse mode. Use A–Z + # on the right.\n"
+                        + "Tap APPS or pull down at the top to search again.\n\n"
+                        + "LONG PRESS\n"
+                        + "Apps: shortcuts, pin to Home, hide, info, uninstall.\n"
+                        + "Home rows: change, rename, move, or clear.\n\n"
+                        + "BACK\n"
+                        + "Search → Browse → Home.";
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("How to use VS")
+                .setMessage(guide)
+                .setPositiveButton("Done", null)
+                .show();
     }
 
     private void showHiddenAppsManager() {

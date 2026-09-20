@@ -21,6 +21,7 @@ final class SearchCommand {
     static final String SOUND = "sound";
     static final String LOCATION = "location";
     static final String NOTIFICATIONS = "notifications";
+    static final String HELP = "help";
 
     private static final SearchCommand[] ALL = {
             new SearchCommand(WIFI, "Wi-Fi", "wifi", "wi fi", "wireless"),
@@ -49,6 +50,16 @@ final class SearchCommand {
                     "Notifications",
                     "notifications",
                     "notification settings"
+            )
+,
+            new SearchCommand(
+                    HELP,
+                    "How to use",
+                    "help",
+                    "how to use",
+                    "guide",
+                    "tips",
+                    "launcher help"
             )
     };
 

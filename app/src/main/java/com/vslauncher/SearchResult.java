@@ -38,12 +38,13 @@ final class SearchResult {
     }
 
     static SearchResult command(SearchCommand command) {
+        String meta = SearchCommand.HELP.equals(command.id) ? "GUIDE" : "SYSTEM";
         return new SearchResult(
                 TYPE_COMMAND,
                 null,
                 command.id,
                 command.label,
-                "SYSTEM",
+                meta,
                 ""
         );
     }
