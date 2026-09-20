@@ -129,6 +129,52 @@
 - APK size delta:
 - Decision: keep candidate / reject candidate / needs more runs
 
+## Manual Baseline Profile fallback
+
+Use this section when AndroidX Macrobenchmark cannot run on the device.
+
+### Capture
+
+- Why manual fallback was required:
+- Capture command:
+- Capture build type:
+- Capture result directory:
+- HRF path:
+- HRF SHA-256:
+- HRF rule count:
+- ProfileInstaller WRITE_SKIP_FILE result:
+- SAVE_PROFILE result:
+- API 34+ dump command result:
+
+### Same-APK manual startup A/B
+
+- Benchmark APK SHA-256:
+- No-profile APK size:
+- Candidate APK size:
+- APK size delta:
+- A iterations:
+- A invalid samples:
+- A median TotalTime:
+- A p90:
+- A p95:
+- A stdev:
+- B iterations:
+- B invalid samples:
+- B median TotalTime:
+- B p90:
+- B p95:
+- B stdev:
+- Median B-A delta:
+- Median percentage delta:
+- Same APK used for A and B: yes / no
+- A reset verified as non-speed-profile: yes / no
+- B INSTALL_PROFILE result=1 verified: yes / no
+- B status=speed-profile verified: yes / no
+- ProfileInstaller skip file deleted after test: yes / no
+- Comparison path:
+- Decision: KEEP / REJECT / INCONCLUSIVE
+- Limitation: manual same-device A/B; not Macrobenchmark
+
 ## Sideload dexopt observation
 
 - dumpsys package dexopt state:
