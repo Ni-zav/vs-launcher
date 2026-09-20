@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -217,6 +216,7 @@ final class AppRepository {
                         .setQueryFlags(
                                 LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
                                         | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                                        | LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
                         );
                 shortcuts = launcherApps.getShortcuts(query, app.user);
                 if (shortcuts == null) shortcuts = Collections.emptyList();
@@ -249,6 +249,38 @@ final class AppRepository {
         }
     }
 
+    boolean startShortcut(AppEntry app, String shortcutId) {
+        if (app == null || shortcutId == null || shortcutId.isEmpty() || launcherApps == null) {
+            return false;
+        }
+        try {
+            launcherApps.startShortcut(
+                    app.component.getPackageName(),
+                    shortcutId,
+                    null,
+                    null,
+                    app.user
+            );
+            return true;
+        } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
+            return false;
+        }
+    }
+
+    boolean pinShortcuts(AppEntry app, List<String> shortcutIds) {
+        if (app == null || launcherApps == null || !canUseShortcuts()) return false;
+        try {
+            launcherApps.pinShortcuts(
+                    app.component.getPackageName(),
+                    shortcutIds,
+                    app.user
+            );
+            return true;
+        } catch (IllegalStateException | SecurityException error) {
+            return false;
+        }
+    }
+
     boolean isQuietModeEnabled(UserHandle user) {
         return quietMode(user);
     }
@@ -268,7 +300,7 @@ final class AppRepository {
             Map<String, String> normalizedAliases,
             Map<String, String> aliasInitials
     ) {
-        String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String normalized = SearchNormalization.normalize(query);
         if (normalized.isEmpty()) return source;
 
         @SuppressWarnings("unchecked")

@@ -27,7 +27,7 @@ final class AppEntry {
             int profileKind
     ) {
         this.label = label;
-        this.normalizedLabel = label.toLowerCase(java.util.Locale.ROOT);
+        this.normalizedLabel = SearchNormalization.normalize(label);
         this.searchInitials = SearchRanking.initials(label);
         this.component = component;
         this.user = user;

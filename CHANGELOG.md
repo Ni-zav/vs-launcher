@@ -1,5 +1,147 @@
 # Changelog
 
+## 0.7.0 — 2026-09-20
+
+### Calm monochrome hierarchy
+
+- Replaced the previous pure-white-everywhere treatment with a fixed neutral luminance scale on absolute black:
+  - focus: `#F0F0F0`
+  - primary: `#DCDCDC`
+  - app/body: `#C2C2C2`
+  - secondary/meta: `#909090`
+  - quiet/navigation: `#646464`
+  - disabled/unavailable: `#464646`
+  - dividers: `#2C2C2C`
+- Removed full-row white pressed inversion.
+- Pressed rows now brighten text only while retaining the black background.
+- Search's deterministic first-ranked result is slightly stronger than lower-ranked rows.
+- Settings section labels, row labels, values, metadata, and A–Z navigation now occupy distinct luminance roles.
+- Native AlertDialogs use the same calmer monochrome hierarchy.
+- Low battery temporarily rises one luminance level rather than introducing warning color.
+- A–Z letters without a matching app recede further; the active scrub letter remains transient and prominent.
+
+### Search / browse flow
+
+- Kept swipe-left as the single Home → focused-search gesture.
+- Added two zero-chrome ways to re-enter search from Apps browse mode:
+  - tap the `APPS` heading
+  - pull downward while already at the top of the list
+- Back navigation is now progressive:
+  - Search → Browse
+  - Browse → Home
+  - Settings → Home
+- The focused search field is now borderless with no rounded rectangle or divider.
+- Search retains automatic keyboard focus on entry.
+- Stable singleton app auto-launch now counts only app results; quiet command rows do not prevent the lone app from launching.
+
+### Search normalization
+
+- Added shared Unicode NFD normalization.
+- Diacritics are removed for matching:
+  - `Pokémon` ↔ `pokemon`
+  - `Résumé` ↔ `resume`
+- Punctuation and repeated whitespace collapse to a single word separator:
+  - `my-app` ↔ `my app`
+- App labels are normalized once during indexing.
+- Aliases are normalized once when the alias cache refreshes.
+- Typed queries use the same normalization contract.
+
+### Latent command layer
+
+- Search can now surface quiet non-app rows without adding Home UI.
+- Apps always remain before command rows.
+- Command rows use small right-side semantic labels such as `SYSTEM`, `DIAL`, and `OPEN`.
+- System commands include:
+  - Wi-Fi
+  - Internet
+  - Volume
+  - Bluetooth
+  - Battery
+  - Android Settings
+  - VS Launcher Settings
+  - Alarms
+  - Calendar
+  - Storage
+  - Keyboard/input methods
+  - NFC
+  - Display
+  - Sound
+  - Location
+  - Notifications
+- Wi-Fi, Internet, Volume, and NFC use Android Settings Panels on API 29+ where available, with documented Settings fallbacks.
+- Command-only results never auto-launch; the user must tap or press keyboard Go/Enter.
+
+### Lightweight query actions
+
+- Phone-like numeric queries produce a permissionless `DIAL` row using `Intent.ACTION_DIAL`.
+- Domain/HTTP(S) queries produce an `OPEN` row using `Intent.ACTION_VIEW`.
+- Neither action participates in automatic singleton launch.
+- No contact indexing, call permission, AI parsing, search history, or browser engine was added.
+
+### Home-pinned app shortcuts
+
+- Native Android app shortcuts can now be pinned into ordinary Home text slots.
+- App long-press keeps direct shortcut launch and adds a latent `Pin shortcut…` action when shortcuts exist.
+- A pinned shortcut remains a single text row on Home—no icon, badge, card, or extra container.
+- Shortcut component/id/label metadata is stored separately from the existing app-slot component key, preserving 0.6 configuration compatibility.
+- Launcher pinning uses `LauncherApps.pinShortcuts()` and always submits the package's complete VS-pinned ID set because the Android API is non-cumulative.
+- Replacing/removing a pinned shortcut re-pins the old package correctly.
+- JSON export/import includes optional shortcut IDs/labels and re-pins configured shortcuts after import.
+- Private Space apps remain ineligible for persistent Home shortcuts.
+
+### Transient Undo
+
+- Added a single Canvas-native transient message with a brighter `UNDO` affordance.
+- No Snackbar/Material dependency, history screen, or permanent notification surface was added.
+- Long-press Hide is immediately reversible.
+- Home slot clear and pinned-shortcut removal are immediately reversible.
+- Undo lives for 2.5 seconds and stores only one pending reversal at a time.
+
+### Alphabet navigation
+
+- Extended A–Z to `A–Z + #`.
+- `#` catches numeric, symbolic, and non-A–Z initial labels.
+- Available and unavailable rail letters use different quiet luminance levels.
+- Fast-scroll indices remain precomputed whenever the browse list changes.
+
+### CI / performance contracts
+
+- Added JVM tests for tolerant search normalization.
+- Added JVM tests for command matching, dial recognition, and URL recognition.
+- Extended the no-allocation/no-`measureText`/no-dp-sp renderer contract to:
+  - `drawSearchRows`
+  - `drawTransientMessage`
+- CI now validates that all design tokens remain neutral grayscale and that the launcher background remains absolute black.
+- Existing restrictions remain:
+  - no Compose
+  - no RecyclerView
+  - no `QUERY_ALL_PACKAGES`
+  - no SharedPreferences/PackageManager/LauncherApps calls from `LauncherSurface`
+  - no continuous idle frame loop
+
+### Version / docs
+
+- Bumped app version to `0.7.0` / versionCode `7`.
+- Updated weather User-Agent to `VS-Launcher/0.7`.
+- Updated README, frictionless feature model, build/install checks, audit checklist, Infinix runbook, and device-test template for the 0.7 interaction model.
+
+### Still deliberately absent
+
+0.7 continues to exclude persistent-surface feature categories that conflict with VS Launcher's product identity:
+
+- widgets
+- notification feeds/filtering
+- folders
+- usage-ranked/adaptive app ordering
+- icon packs/wallpaper/theme systems
+- a large configurable gesture vocabulary
+- search history
+- contact indexing
+- AI/assistant behavior
+
+The rule remains: add useful capability behind existing intent, not permanent pixels.
+
+
 ## 0.6.0 — 2026-09-20
 
 ### Frictionless Apps interaction

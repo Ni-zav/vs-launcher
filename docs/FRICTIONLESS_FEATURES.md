@@ -8,7 +8,7 @@ The product rule is:
 
 This keeps Home quiet while making the launcher faster for deliberate interaction.
 
-## 0.6 interaction contract
+## 0.7 interaction contract
 
 ### Home
 
@@ -20,6 +20,7 @@ Home keeps only glanceable state and explicitly chosen apps.
 - Swipe down: intentionally unused.
 - Tap the first empty `+ ADD APP` slot: open the picker directly.
 - Long-press an assigned Home row: advanced slot actions.
+- Home slots can hold either a normal app or a launcher-pinned native app shortcut while remaining one text row.
 - Tap time: show alarms.
 - Tap date: open today's calendar.
 - Tap battery: battery saver settings, with general Settings as fallback.
@@ -40,7 +41,22 @@ Home
 → auto-launch
 ```
 
-A stable single result auto-launches after a short debounce. Keyboard Go/Enter immediately launches the first ranked result.
+A stable single **app** result auto-launches after a short debounce. Quiet non-app command rows do not block that singleton-app behavior and never auto-launch themselves. Keyboard Go/Enter immediately executes the first ranked row.
+
+Browse mode can return to search without going Home:
+
+- tap the `APPS` heading
+- pull downward while already at the top of the app list
+
+Back is progressive:
+
+```text
+SEARCH
+→ Back
+BROWSE
+→ Back
+HOME
+```
 
 If the user instead starts dragging the app list:
 
@@ -57,12 +73,14 @@ This transition is deliberate: search and browse are two modes of one page, not 
 
 ### Alphabet fast scroll
 
-The A–Z rail exists only in Apps browse mode.
+The A–Z + # rail exists only in Apps browse mode.
 
 - no rail on Home
 - no rail while search is visible
 - right-edge touch/drag jumps to the nearest available initial
-- first rows for A–Z are precomputed when the browse list changes
+- `#` catches numeric, symbolic, and non-A–Z initials
+- first rows for A–Z + # are precomputed when the browse list changes
+- letters with no target use the disabled luminance role
 - the enlarged active letter exists only while scrubbing
 
 The rail is navigation, not decoration.
@@ -91,6 +109,52 @@ Google Maps   → gm
 
 The fuzzy fallback is not Levenshtein/edit distance. It accepts ordered characters only when their matched span remains bounded. That keeps runtime linear in app-label length and avoids fuzzy results outranking stronger deterministic matches.
 
+## Search normalization and latent actions
+
+Search normalization is shared by app labels, aliases, and typed queries:
+
+- Unicode NFD decomposition
+- combining-mark removal
+- punctuation → word separator
+- repeated whitespace collapse
+- lowercase matching
+
+This makes `Pokémon` match `pokemon` and `my-app` match `my app` without adding fuzzy edit-distance work.
+
+After ranked app results, search may append latent action rows:
+
+- `SYSTEM` for Android/launcher actions such as Wi-Fi, Internet, Volume, Bluetooth, Battery, Settings, Launcher settings, Alarms, Calendar, Storage, Keyboard, NFC, Display, Sound, Location, and Notifications
+- `DIAL` for phone-like numeric input using permissionless `ACTION_DIAL`
+- `OPEN` for domain/HTTP(S) input using `ACTION_VIEW`
+
+Rules:
+
+- apps stay before non-app rows
+- commands require at least two normalized characters
+- command-only results never auto-fire
+- no contacts, history, browser engine, AI parser, or call permission are introduced
+- Settings Panels are preferred for Wi-Fi/Internet/Volume/NFC on API 29+ when available
+
+## Calm monochrome hierarchy
+
+Minimal does not mean every foreground element is pure white.
+
+The background stays absolute black. Foreground roles are fixed neutral grays:
+
+```text
+focus / press       #F0F0F0
+primary             #DCDCDC
+app/body            #C2C2C2
+secondary/meta      #909090
+quiet/navigation    #646464
+disabled            #464646
+divider             #2C2C2C
+```
+
+This scale is semantic, not customizable. It exists to stop metadata, section labels, app rows, fast-scroll navigation, and active focus from competing at the same visual volume.
+
+Pressed rows keep the black surface and brighten text rather than inverting the entire row. The focused search EditText is borderless. Low battery may temporarily promote its luminance but never changes hue.
+
 ## Native Android app shortcuts
 
 VS Launcher uses Android `LauncherApps` shortcut APIs only when an app is long-pressed.
@@ -102,12 +166,14 @@ TELEGRAM
 
 New message
 Saved Messages
-────────────
+Pin shortcut…
 Add to Home
 Hide
 App info
 Uninstall
 ```
+
+`Pin shortcut…` lets one of the native actions occupy a normal Home text slot. VS uses `LauncherApps.pinShortcuts()` and re-submits the full package shortcut-ID set because Android's launcher pin API is non-cumulative.
 
 Rules:
 
@@ -121,6 +187,18 @@ Android references:
 
 - LauncherApps: https://developer.android.com/reference/android/content/pm/LauncherApps
 - ShortcutQuery: https://developer.android.com/reference/android/content/pm/LauncherApps.ShortcutQuery
+
+## Transient Undo
+
+Reversible launcher actions should not require confirmation dialogs.
+
+VS keeps one in-memory Undo opportunity for 2.5 seconds after:
+
+- hiding an app from long-press
+- clearing a Home slot
+- removing a pinned Home shortcut
+
+The Canvas draws one quiet transient message with a brighter `UNDO` affordance. There is no Snackbar dependency, history list, queue, or persistent notification.
 
 ## Profile-aware launcher model
 
@@ -229,7 +307,7 @@ Rejected because the app order becomes less predictable and requires behavior tr
 
 ### Icon packs, wallpaper, theme systems
 
-Rejected because the strict binary visual system is an intentional product constraint.
+Rejected because the fixed monochrome hierarchy is an intentional product constraint. The neutral luminance scale is semantic UI infrastructure, not a user theme system.
 
 ### Large configurable gesture vocabulary
 
@@ -237,17 +315,20 @@ Rejected because memorization/configuration becomes its own source of friction. 
 
 ## Performance invariants
 
-0.6 features must preserve:
+0.7 features must preserve:
 
 1. no continuous idle render loop
 2. no PackageManager/LauncherApps/SharedPreferences calls from `LauncherSurface`
 3. no allocation, text measurement, resource lookup, or dp/sp conversion in draw hot paths
 4. search remains one traversal of the visible searchable apps per query change
-5. app initials/aliases/A–Z first indices are cached outside frame-critical paths
-6. shortcut queries happen only after deliberate long-press
+5. app initials/aliases/A–Z + # first indices are cached outside frame-critical paths
+6. shortcut discovery happens only after deliberate long-press; pinned Home shortcut launch uses the stored ID without startup queries
 7. work/private containers are plain Canvas rows, not nested view hierarchies
 8. profile apps that Android marks unavailable never leak into search
 9. normal production UI remains native Java + Canvas, without Compose/RecyclerView
-10. strict black/white palette remains unchanged
+10. all foreground/background design tokens remain neutral grayscale; the background remains absolute black
+11. command/dial/URL rows never participate in automatic launch
+12. only one transient Undo action is retained in memory
+13. Settings/command execution stays outside `LauncherSurface`
 
 CI enforces the renderer/design portions of this contract and JVM tests cover search ranking, geometry, and profile privacy policy.

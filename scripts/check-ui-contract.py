@@ -8,6 +8,7 @@ SURFACE = ROOT / "app/src/main/java/com/vslauncher/LauncherSurface.java"
 MAIN = ROOT / "app/src/main/java/com/vslauncher/MainActivity.java"
 TOKENS = ROOT / "app/src/main/java/com/vslauncher/DesignTokens.java"
 APP_GRADLE = ROOT / "app/build.gradle"
+STYLES = ROOT / "app/src/main/res/values/styles.xml"
 MAIN_SRC = ROOT / "app/src/main/java"
 
 errors = []
@@ -39,6 +40,7 @@ surface = SURFACE.read_text(encoding="utf-8")
 main = MAIN.read_text(encoding="utf-8")
 tokens = TOKENS.read_text(encoding="utf-8")
 gradle = APP_GRADLE.read_text(encoding="utf-8")
+styles = STYLES.read_text(encoding="utf-8")
 
 hot_methods = [
     "onDraw",
@@ -47,9 +49,11 @@ hot_methods = [
     "drawHomeRows",
     "drawBattery",
     "drawApps",
+    "drawSearchRows",
     "drawAppRows",
     "drawBrowseRows",
     "drawAlphabetRail",
+    "drawTransientMessage",
     "drawSettings",
     "drawSettingsRow",
 ]
@@ -74,13 +78,34 @@ if "android.permission.QUERY_ALL_PACKAGES" in manifest:
 if "android.permission.ACCESS_HIDDEN_PROFILES" not in manifest:
     errors.append("Private Space support requires ACCESS_HIDDEN_PROFILES")
 
-color_calls = set(re.findall(r"Color\.([A-Za-z0-9_]+)", tokens))
-unexpected_colors = color_calls - {"BLACK", "WHITE"}
-if unexpected_colors:
-    errors.append(f"DesignTokens uses non-binary Color APIs/constants: {sorted(unexpected_colors)}")
-
-if "#000000" not in tokens or "#FFFFFF" not in tokens:
-    errors.append("DesignTokens strict black/white contract comment is missing")
+token_values = {
+    name: int(value, 16)
+    for name, value in re.findall(
+        r"static final int ([A-Z_]+) = 0x([0-9A-Fa-f]{8});",
+        tokens,
+    )
+}
+for name, argb in token_values.items():
+    red = (argb >> 16) & 0xFF
+    green = (argb >> 8) & 0xFF
+    blue = argb & 0xFF
+    if red != green or green != blue:
+        errors.append(f"DesignTokens must remain monochrome; {name} is not neutral gray")
+if token_values.get("BLACK") != 0xFF000000:
+    errors.append("Launcher background must remain absolute black")
+if "#FFFFFF" in styles.upper():
+    errors.append("Native themes must not reintroduce pure-white UI chrome")
+for required_token in (
+    "FOCUS",
+    "TEXT_PRIMARY",
+    "TEXT_APP",
+    "TEXT_SECONDARY",
+    "TEXT_TERTIARY",
+    "TEXT_DISABLED",
+    "DIVIDER",
+):
+    if required_token not in token_values:
+        errors.append(f"Missing semantic monochrome token {required_token}")
 
 production_text = gradle
 for path in MAIN_SRC.rglob("*.java"):
@@ -106,5 +131,5 @@ if errors:
 
 print("UI/performance contract passed.")
 print(f"Checked draw hot paths: {', '.join(hot_methods)}")
-print("Palette: strict black/white")
+print("Palette: strict monochrome hierarchy on absolute black")
 print("Production UI: no Compose/RecyclerView")

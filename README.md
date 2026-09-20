@@ -1,22 +1,24 @@
 # VS Launcher
 
-VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.6 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.7 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent commands, no continuous render loop, and no production UI framework.
 
 ## Interaction
 
 - **Swipe left** from Home → Apps opens in search mode with the field focused and keyboard requested.
 - **Start scrolling Apps** → search/query/keyboard disappear, the list expands, and the right-side A–Z fast-scroll rail becomes available.
-- **Drag the A–Z rail** → jump directly to the nearest available app initial; the active letter is transient.
+- **Drag the A–Z + # rail** → jump directly to the nearest available app initial; `#` catches numeric/symbol/non-A–Z labels and the active letter is transient.
+- **Tap APPS** or **pull downward at the top of browse mode** → re-enter focused search without going Home.
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
 - **Swipe down** from Home → intentionally unused.
-- **Type until one result remains** → the stable singleton result auto-launches after a short debounce.
+- **Type until one app remains** → the stable singleton app auto-launches after a short debounce even if quiet command rows also exist.
 - **Keyboard Go/Enter** → launches the first ranked result immediately.
 - **Tap + ADD APP** → open the Home app picker directly.
 - **Long-press a Home row** → change, rename, move, or clear that slot.
-- **Long-press an app** → native app shortcuts (when exposed) plus Add to Home, Hide, App info, and personal-profile Uninstall.
+- **Long-press an app** → native app shortcuts (when exposed), optional Pin shortcut…, Add to Home, Hide, App info, and personal-profile Uninstall.
 - **Tap time / date / battery / weather** → alarms / today's calendar / battery saver settings / weather refresh.
-- **Back** from a side page → Home.
+- **Back** is progressive: Search → Browse → Home; Settings → Home.
+- **Hide / clear Home / remove pinned shortcut** → immediate action plus one transient Undo opportunity.
 
 ## Customization
 
@@ -27,7 +29,7 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 - Position: Top / Center / Bottom.
 - Density: Compact / Normal / Spacious.
 - Text size: Small / Medium / Large.
-- Persistent per-slot app assignment.
+- Persistent per-slot app or pinned app-shortcut assignment.
 - Per-app aliases on Home.
 - Move Home slots up/down or clear them.
 
@@ -50,41 +52,51 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 
 ## Search
 
-Search remains a compact O(n) pass performed only when the query changes. Alias data and word/camel-case initials are normalized and cached outside the keystroke path, and all ranking tiers are decided in one traversal of visible apps.
+Search remains a compact O(n) app-ranking pass performed only when the query changes. Alias data, word/camel-case initials, and normalized app labels are cached outside the keystroke path.
 
-Ranking is deterministic:
+App ranking remains deterministic:
 
 1. canonical app-name prefix
 2. alias prefix
 3. canonical initials
 4. alias initials
-5. canonical substring
+5. canonical app-name substring
 6. alias substring
 7. bounded canonical subsequence fallback
 8. bounded alias subsequence fallback
 
-Examples: `ytm` can resolve **YouTube Music** through cached initials, while the fuzzy fallback only accepts ordered characters inside a bounded span. It never outranks exact prefixes, initials, or substrings and does not use edit-distance/Levenshtein work.
+Normalization is forgiving but deterministic: accents are stripped for matching and punctuation/repeated whitespace collapse to word separators. For example, `Pokémon` matches `pokemon`, and `my-app` matches `my app`.
 
-Aliases affect Home and search ranking; Apps still shows the application's canonical label. Hidden apps are excluded from Apps/search only. Existing personal/work Home slots and quick-launch assignments can still launch a hidden app.
+Apps remain ahead of latent non-app actions. Search may append quiet semantic rows for system actions, safe dialing, or opening a URL. Those rows never auto-launch; tap or keyboard Go/Enter is required. A single app can still auto-launch even if one or more command rows are also shown.
 
-## Strict black / white design
+Examples of latent system queries include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `alarm`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`.
 
-The production visual system uses only:
+Aliases affect Home and app search ranking; Apps still shows the application's canonical label. Hidden apps are excluded from Apps/search only. Existing personal/work Home slots and quick-launch assignments can still launch a hidden app.
+
+## Calm monochrome design
+
+The background remains absolute black:
 
 ```text
 #000000
-#FFFFFF
 ```
 
-There are no alpha-gray hierarchy tokens, gradients, blur, shadows, wallpapers, or decorative animation. Hierarchy comes from:
+Foreground hierarchy uses a small fixed neutral scale rather than pure white everywhere:
 
-- system font family/weight
-- text size
-- spacing
-- geometry
-- binary pressed-state inversion
-- dividers only where structure benefits from them
-- placement
+| Role | Value |
+| --- | --- |
+| Focus / active press | `#F0F0F0` |
+| Primary | `#DCDCDC` |
+| App/body | `#C2C2C2` |
+| Secondary/meta | `#909090` |
+| Quiet/navigation | `#646464` |
+| Disabled/unavailable | `#464646` |
+| Dividers | `#2C2C2C` |
+
+There are still no chromatic theme colors, gradients, blur, shadows, wallpapers, cards, or decorative animation. The hierarchy comes from luminance, system font weight, text size, whitespace, placement, and transient emphasis.
+
+Pressed rows keep the black surface and brighten text instead of flashing a white rectangle. The focused search field is borderless. The A–Z rail is intentionally quiet until touched. Low battery receives temporary luminance emphasis rather than color.
+
 
 The full interaction/privacy rationale is documented in **[docs/FRICTIONLESS_FEATURES.md](docs/FRICTIONLESS_FEATURES.md)**.
 
@@ -125,7 +137,11 @@ The UI thread should be almost idle while Home is not moving.
 - Search ranking is one pass over visible apps while preserving deterministic tier order.
 - Canonical and alias initials are precomputed outside typing.
 - Fuzzy fallback is bounded ordered-subsequence matching rather than quadratic edit distance.
-- A–Z first-row indices are cached when the browse list changes.
+- A–Z + # first-row indices are cached when the browse list changes.
+- Search command definitions are static and only matched when the query is at least two normalized characters.
+- Dial/URL recognition is local and permissionless; it does not index contacts or history.
+- Home shortcut IDs/labels are persisted without startup shortcut queries.
+- Undo keeps only one in-memory reversal and schedules one delayed clear callback.
 - Native app shortcuts are queried only on long-press.
 - App/profile discovery uses Android LauncherApps on the background app-index executor.
 - Settings row geometry is precomputed when size/configuration changes.
@@ -187,7 +203,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.6.0-debug.apk
+dist/VS-Launcher-0.7.0-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
@@ -204,7 +220,11 @@ MainActivity
 ├── AppListItem           flat Canvas browse rows for apps/profile containers
 ├── LauncherProfile       minimal work/private profile state
 ├── ProfilePolicy         pure-Java privacy/persistence rules
-├── SearchRanking         pure-Java deterministic search tier contract
+├── SearchRanking         pure-Java deterministic app-search tiers
+├── SearchNormalization   accent/punctuation tolerant normalization
+├── SearchCommand         static latent system-command catalog
+├── SearchResult          flat app/system/dial/open search rows
+├── QueryActions          permissionless dial/URL recognition
 └── WeatherService        coarse location, cache, network, weather mapping
 
 macrobenchmark/           physical-device performance tests only
@@ -220,9 +240,12 @@ Future changes should preserve:
 2. no avoidable allocation in the per-frame draw path
 3. no continuous work while the launcher is idle
 4. no production dependency merely for decoration
-5. Home remains black, white, text-first, and visually quiet
+5. Home remains absolute-black, monochrome, text-first, and visually quiet
 6. Home and Apps use whitespace rather than repetitive row dividers
 7. Settings keeps explicit section structure
 8. draw hot paths do not allocate, measure text, or convert dp/sp
 9. new capabilities should remain latent behind existing gestures, taps, long-press, search, or transient overlays
 10. locked Private Space apps never enter normal search or persistent Home/quick-launch state
+11. new foreground colors must remain neutral grayscale semantic roles, not chromatic themes
+12. non-app search actions never participate in automatic launch
+13. reversible launcher actions prefer transient Undo over confirmation dialogs

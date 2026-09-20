@@ -1,0 +1,58 @@
+package com.vslauncher;
+
+final class SearchResult {
+    static final int TYPE_APP = 0;
+    static final int TYPE_COMMAND = 1;
+    static final int TYPE_DIAL = 2;
+    static final int TYPE_URL = 3;
+
+    final int type;
+    final AppEntry app;
+    final String id;
+    final String label;
+    final String meta;
+    final String payload;
+
+    private SearchResult(
+            int type,
+            AppEntry app,
+            String id,
+            String label,
+            String meta,
+            String payload
+    ) {
+        this.type = type;
+        this.app = app;
+        this.id = id == null ? "" : id;
+        this.label = label == null ? "" : label;
+        this.meta = meta == null ? "" : meta;
+        this.payload = payload == null ? "" : payload;
+    }
+
+    static SearchResult app(AppEntry app) {
+        return new SearchResult(TYPE_APP, app, "", app.label, "", "");
+    }
+
+    static SearchResult command(SearchCommand command) {
+        return new SearchResult(
+                TYPE_COMMAND,
+                null,
+                command.id,
+                command.label,
+                "SYSTEM",
+                ""
+        );
+    }
+
+    static SearchResult dial(String number) {
+        return new SearchResult(TYPE_DIAL, null, "dial", number, "DIAL", number);
+    }
+
+    static SearchResult url(String url) {
+        return new SearchResult(TYPE_URL, null, "url", url, "OPEN", url);
+    }
+
+    boolean isApp() {
+        return type == TYPE_APP && app != null;
+    }
+}

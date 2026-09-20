@@ -11,8 +11,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -85,6 +83,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private Map<String, String> normalizedAliases = Collections.emptyMap();
     private Map<String, String> aliasInitials = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<SearchResult> searchResults = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
@@ -94,6 +93,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private boolean packageReceiverRegistered;
     private boolean appsBrowseMode;
     private Runnable pendingSingleResultLaunch;
+    private Runnable undoAction;
+    private Runnable pendingUndoClear;
 
     private final Runnable clockTick = new Runnable() {
         @Override public void run() {
@@ -192,6 +193,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override protected void onDestroy() {
+        clearUndo();
         removeSearch();
         unregisterPackageChanges();
         appRepository.close();
@@ -200,7 +202,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onBackPressed() {
-        if (surface.getPage() != LauncherSurface.PAGE_HOME) {
+        if (surface.getPage() == LauncherSurface.PAGE_APPS) {
+            if (search != null) {
+                enterAppsBrowseMode();
+            } else {
+                showPage(LauncherSurface.PAGE_HOME);
+            }
+            return;
+        }
+
+        if (surface.getPage() == LauncherSurface.PAGE_SETTINGS) {
             showPage(LauncherSurface.PAGE_HOME);
         }
     }
@@ -300,7 +311,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         for (Map.Entry<String, String> entry : loaded.entrySet()) {
             String value = entry.getValue();
             if (value == null) continue;
-            String clean = value.trim().toLowerCase(Locale.ROOT);
+            String clean = SearchNormalization.normalize(value);
             if (!clean.isEmpty()) {
                 normalized.put(entry.getKey(), clean);
                 String aliasInitial = SearchRanking.initials(value);
@@ -322,7 +333,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
         apps = Collections.unmodifiableList(visible);
         filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, filteredApps);
         surface.setApps(apps, filteredApps);
+        surface.setSearchResults(searchResults);
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -363,10 +376,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
         ArrayList<String> labels = new ArrayList<>(maxHomeApps);
+        ArrayList<String> shortcutIds = new ArrayList<>(maxHomeApps);
         Set<String> used = new HashSet<>();
 
         for (int index = 0; index < maxHomeApps; index++) {
             String componentName = launcherPreferences.homeSlot(index);
+            String shortcutId = launcherPreferences.homeShortcutId(index);
             AppEntry entry = findHomeEligibleApp(componentName);
 
             if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
@@ -377,11 +392,21 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             }
 
             resolved.add(entry);
+            shortcutIds.add(shortcutId == null ? "" : shortcutId);
             if (entry != null) {
                 String component = entry.componentKey;
-                String alias = aliases.get(component);
-                labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
-                used.add(component);
+                if (shortcutId != null && !shortcutId.isEmpty()) {
+                    String shortcutLabel = launcherPreferences.homeShortcutLabel(index);
+                    labels.add(
+                            shortcutLabel == null || shortcutLabel.isEmpty()
+                                    ? entry.label
+                                    : shortcutLabel
+                    );
+                } else {
+                    String alias = aliases.get(component);
+                    labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
+                    used.add(component);
+                }
             } else if (componentName != null && !componentName.isEmpty()) {
                 labels.add(unavailableHomeLabel(componentName));
             } else {
@@ -404,6 +429,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setHomeConfiguration(
                 homeApps,
                 Collections.unmodifiableList(labels),
+                Collections.unmodifiableList(shortcutIds),
                 maxHomeApps,
                 quickLabel
         );
@@ -566,17 +592,22 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void addSearch(boolean focus) {
         surface.setSearchActive(true);
+        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, filteredApps);
+        surface.setFilteredApps(filteredApps);
+        surface.setSearchResults(searchResults);
+
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
         search.setHintTextColor(DesignTokens.TEXT_TERTIARY);
-        search.setHint("Search apps");
+        search.setHint("Search");
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.SEARCH_SP);
         search.setTypeface(DesignTokens.BODY);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         search.setImeOptions(EditorInfo.IME_ACTION_GO);
-        search.setBackground(searchBackground());
-        search.setPadding(dp(18f), 0, dp(18f), 0);
+        search.setBackground(null);
+        search.setPadding(dp(8f), 0, dp(8f), 0);
         search.setContentDescription("Search all apps");
 
         if (!query.isEmpty()) {
@@ -596,8 +627,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         normalizedAliases,
                         aliasInitials
                 );
+                searchResults = buildSearchResults(query, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                scheduleSingleResultLaunch(query, filteredApps);
+                surface.setSearchResults(searchResults);
+                scheduleSingleResultLaunch(query, searchResults);
             }
 
             @Override public void afterTextChanged(Editable s) {
@@ -610,8 +643,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     && event.getAction() == android.view.KeyEvent.ACTION_UP)) {
                 return false;
             }
-            if (!filteredApps.isEmpty()) {
-                launchApp(filteredApps.get(0));
+            if (!searchResults.isEmpty()) {
+                executeSearchResult(searchResults.get(0));
                 return true;
             }
             return false;
@@ -637,7 +670,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private FrameLayout.LayoutParams searchLayoutParams() {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(56f),
+                dp(48f),
                 Gravity.BOTTOM
         );
         params.setMargins(dp(16f), 0, dp(16f), dp(12f) + bottomInset);
@@ -655,7 +688,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             query = "";
             surface.setSearchActive(false);
             filteredApps = apps;
+            searchResults = Collections.emptyList();
             surface.setFilteredApps(filteredApps);
+            surface.setSearchResults(searchResults);
             return;
         }
 
@@ -668,27 +703,176 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         query = "";
         surface.setSearchActive(false);
         filteredApps = apps;
+        searchResults = Collections.emptyList();
         surface.setFilteredApps(filteredApps);
+        surface.setSearchResults(searchResults);
     }
 
-    private void scheduleSingleResultLaunch(String currentQuery, List<AppEntry> currentResults) {
-        cancelPendingSingleResultLaunch();
-        String normalizedQuery = currentQuery == null ? "" : currentQuery.trim();
-        if (normalizedQuery.isEmpty() || currentResults.size() != 1) return;
+    private List<SearchResult> buildSearchResults(
+            String rawQuery,
+            List<AppEntry> appMatches
+    ) {
+        ArrayList<SearchResult> results = new ArrayList<>(
+                appMatches.size() + 6
+        );
+        for (AppEntry app : appMatches) results.add(SearchResult.app(app));
 
-        AppEntry only = currentResults.get(0);
+        if (!SearchNormalization.normalize(rawQuery).isEmpty()) {
+            for (SearchCommand command : SearchCommand.matching(rawQuery)) {
+                results.add(SearchResult.command(command));
+            }
+
+            String dial = QueryActions.dialPayload(rawQuery);
+            if (dial != null) results.add(SearchResult.dial(dial));
+
+            String url = QueryActions.urlPayload(rawQuery);
+            if (url != null) results.add(SearchResult.url(url));
+        }
+
+        return results.isEmpty()
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(results);
+    }
+
+    private void executeSearchResult(SearchResult result) {
+        if (result == null) return;
+        cancelPendingSingleResultLaunch();
+
+        if (result.isApp()) {
+            launchApp(result.app);
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_DIAL) {
+            launchExternalIntent(new Intent(
+                    Intent.ACTION_DIAL,
+                    Uri.fromParts("tel", result.payload, null)
+            ));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_URL) {
+            launchExternalIntent(new Intent(Intent.ACTION_VIEW, Uri.parse(result.payload)));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_COMMAND) {
+            executeSystemCommand(result.id);
+        }
+    }
+
+    private void executeSystemCommand(String id) {
+        switch (id) {
+            case SearchCommand.WIFI:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_WIFI : null,
+                        Settings.ACTION_WIFI_SETTINGS
+                );
+                break;
+            case SearchCommand.INTERNET:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_INTERNET_CONNECTIVITY : null,
+                        Settings.ACTION_WIRELESS_SETTINGS
+                );
+                break;
+            case SearchCommand.VOLUME:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_VOLUME : null,
+                        Settings.ACTION_SOUND_SETTINGS
+                );
+                break;
+            case SearchCommand.NFC:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_NFC : null,
+                        Settings.ACTION_NFC_SETTINGS
+                );
+                break;
+            case SearchCommand.BLUETOOTH:
+                launchExternalIntent(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                break;
+            case SearchCommand.BATTERY:
+                onBatteryTapped();
+                break;
+            case SearchCommand.SETTINGS:
+                launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
+                break;
+            case SearchCommand.LAUNCHER_SETTINGS:
+                showPage(LauncherSurface.PAGE_SETTINGS);
+                break;
+            case SearchCommand.ALARMS:
+                onClockTapped();
+                break;
+            case SearchCommand.CALENDAR:
+                onDateTapped();
+                break;
+            case SearchCommand.STORAGE:
+                launchExternalIntent(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS));
+                break;
+            case SearchCommand.KEYBOARD:
+                launchExternalIntent(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
+                break;
+            case SearchCommand.DISPLAY:
+                launchExternalIntent(new Intent(Settings.ACTION_DISPLAY_SETTINGS));
+                break;
+            case SearchCommand.SOUND:
+                launchExternalIntent(new Intent(Settings.ACTION_SOUND_SETTINGS));
+                break;
+            case SearchCommand.LOCATION:
+                launchExternalIntent(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                break;
+            case SearchCommand.NOTIFICATIONS:
+                if (Build.VERSION.SDK_INT >= 33) {
+                    launchExternalIntent(new Intent(Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS));
+                } else {
+                    launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void launchSettingsPanelOrFallback(String panelAction, String fallbackAction) {
+        if (panelAction != null && launchExternalIntent(new Intent(panelAction))) return;
+        launchExternalIntent(new Intent(fallbackAction));
+    }
+
+    private void scheduleSingleResultLaunch(
+            String currentQuery,
+            List<SearchResult> currentResults
+    ) {
+        cancelPendingSingleResultLaunch();
+        String normalizedQuery = SearchNormalization.normalize(currentQuery);
+        if (normalizedQuery.isEmpty()) return;
+
+        SearchResult onlyApp = singleAppResult(currentResults);
+        if (onlyApp == null) return;
+
         pendingSingleResultLaunch = () -> {
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
-                    || !normalizedQuery.equals(query.trim())
-                    || filteredApps.size() != 1
-                    || filteredApps.get(0) != only) {
+                    || !normalizedQuery.equals(SearchNormalization.normalize(query))
+                    || singleAppResult(searchResults) != onlyApp) {
                 return;
             }
-            launchApp(only);
+            launchApp(onlyApp.app);
         };
         mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
+    }
+
+    private static SearchResult singleAppResult(List<SearchResult> results) {
+        SearchResult only = null;
+        for (SearchResult result : results) {
+            if (!result.isApp()) continue;
+            if (only != null) return null;
+            only = result;
+        }
+        return only;
     }
 
     private void cancelPendingSingleResultLaunch() {
@@ -697,30 +881,20 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         pendingSingleResultLaunch = null;
     }
 
-    private StateListDrawable searchBackground() {
-        StateListDrawable states = new StateListDrawable();
-        states.addState(
-                new int[] { android.R.attr.state_focused },
-                searchField(DesignTokens.FOCUS)
-        );
-        states.addState(new int[] {}, searchField(DesignTokens.DIVIDER));
-        return states;
-    }
-
-    private GradientDrawable searchField(int strokeColor) {
-        GradientDrawable field = new GradientDrawable();
-        field.setColor(Color.BLACK);
-        field.setCornerRadius(dp(DesignTokens.CORNER_DP));
-        field.setStroke(dp(1f), strokeColor);
-        return field;
-    }
-
     @Override public void onPageRequested(int page) {
         showPage(page, page == LauncherSurface.PAGE_APPS);
     }
 
     @Override public void onOpenApp(AppEntry app) {
         launchApp(app);
+    }
+
+    @Override public void onOpenHomeShortcut(AppEntry app, String shortcutId) {
+        if (!appRepository.startShortcut(app, shortcutId)) reloadApps();
+    }
+
+    @Override public void onSearchResultTapped(SearchResult result) {
+        executeSearchResult(result);
     }
 
     @Override public void onHomeSlotLongPressed(int index) {
@@ -752,6 +926,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         int shortcutActionCount = actions.size();
+        if (shortcutActionCount > 0 && ProfilePolicy.canPersistOnHome(app.profileKind)) {
+            actions.add("Pin shortcut…");
+        }
         if (ProfilePolicy.canPersistOnHome(app.profileKind)) actions.add("Add to Home");
         actions.add("Hide");
         actions.add("App info");
@@ -769,6 +946,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
                     String action = actions.get(which);
                     switch (action) {
+                        case "Pin shortcut…":
+                            showShortcutPinPicker(app, shortcutActions);
+                            break;
                         case "Add to Home":
                             showAddToHomeSlotPicker(app);
                             break;
@@ -776,6 +956,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             launcherPreferences.setHidden(app.componentKey, true);
                             refreshVisibleApps();
                             resolveLauncherConfiguration();
+                            showUndo(app.label + " hidden", () -> {
+                                launcherPreferences.setHidden(app.componentKey, false);
+                                refreshVisibleApps();
+                                resolveLauncherConfiguration();
+                            });
                             break;
                         case "App info":
                             openAppInfo(app);
@@ -944,6 +1129,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onAppsBrowseGestureStarted() {
         if (surface.getPage() != LauncherSurface.PAGE_APPS || appsBrowseMode) return;
+        enterAppsBrowseMode();
+    }
+
+    @Override public void onAppsSearchRequested() {
+        if (surface.getPage() != LauncherSurface.PAGE_APPS) return;
+        appsBrowseMode = false;
+        if (search == null) addSearch(true);
+        else focusSearchField();
+    }
+
+    private void enterAppsBrowseMode() {
         appsBrowseMode = true;
         removeSearch();
     }
@@ -953,10 +1149,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         actions.add("Change app");
 
         AppEntry current = slot < homeApps.size() ? homeApps.get(slot) : null;
-        if (current != null) actions.add("Rename");
+        String currentShortcutId = launcherPreferences.homeShortcutId(slot);
+        boolean shortcutSlot = currentShortcutId != null && !currentShortcutId.isEmpty();
+        if (current != null && !shortcutSlot) actions.add("Rename");
         if (slot > 0) actions.add("Move up");
         if (slot + 1 < maxHomeApps) actions.add("Move down");
-        actions.add("Clear slot");
+        actions.add(shortcutSlot ? "Remove shortcut" : "Clear slot");
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home slot " + (slot + 1))
@@ -978,8 +1176,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             resolveLauncherConfiguration();
                             break;
                         case "Clear slot":
-                            launcherPreferences.clearHomeSlot(slot);
-                            resolveLauncherConfiguration();
+                        case "Remove shortcut":
+                            clearHomeSlotWithUndo(slot, shortcutSlot);
                             break;
                         default:
                             break;
@@ -1000,10 +1198,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
                     AppEntry selected = eligible.get(which);
-                    launcherPreferences.setHomeSlot(
-                            slot,
-                            selected.componentKey
-                    );
+                    AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+                    launcherPreferences.setHomeSlot(slot, selected.componentKey);
+                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
@@ -1017,8 +1214,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         String component = app.componentKey;
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setTextColor(DesignTokens.WHITE);
-        input.setHintTextColor(DesignTokens.WHITE);
+        input.setTextColor(DesignTokens.TEXT_PRIMARY);
+        input.setHintTextColor(DesignTokens.TEXT_TERTIARY);
         input.setBackgroundColor(DesignTokens.BLACK);
         input.setHint(app.label);
         String existing = launcherPreferences.alias(component);
@@ -1057,14 +1254,147 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Add " + app.pickerLabel())
                 .setItems(slots, (dialog, which) -> {
-                    launcherPreferences.setHomeSlot(
-                            which,
-                            app.componentKey
-                    );
+                    AppEntry oldShortcutApp = shortcutAppAtSlot(which);
+                    launcherPreferences.setHomeSlot(which, app.componentKey);
+                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void showShortcutPinPicker(AppEntry app, List<ShortcutInfo> shortcuts) {
+        if (shortcuts.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[shortcuts.size()];
+        for (int i = 0; i < shortcuts.size(); i++) {
+            CharSequence shortLabel = shortcuts.get(i).getShortLabel();
+            labels[i] = shortLabel == null || shortLabel.length() == 0
+                    ? "Shortcut"
+                    : shortLabel;
+        }
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Pin shortcut")
+                .setItems(labels, (dialog, which) ->
+                        showShortcutHomeSlotPicker(app, shortcuts.get(which)))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showShortcutHomeSlotPicker(AppEntry app, ShortcutInfo shortcut) {
+        CharSequence[] slots = new CharSequence[maxHomeApps];
+        for (int i = 0; i < maxHomeApps; i++) {
+            String label = i < homeApps.size() && homeApps.get(i) != null
+                    ? surfaceHomeLabel(i)
+                    : "Empty";
+            slots[i] = (i + 1) + " · " + label;
+        }
+
+        CharSequence shortLabel = shortcut.getShortLabel();
+        String label = shortLabel == null || shortLabel.length() == 0
+                ? app.label
+                : shortLabel.toString();
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Pin " + label)
+                .setItems(slots, (dialog, slot) ->
+                        pinShortcutToHome(app, shortcut.getId(), label, slot))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private String surfaceHomeLabel(int slot) {
+        String shortcutLabel = launcherPreferences.homeShortcutLabel(slot);
+        if (shortcutLabel != null && !shortcutLabel.isEmpty()) return shortcutLabel;
+
+        AppEntry existing = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (existing == null) return "Empty";
+        String alias = aliases.get(existing.componentKey);
+        return alias == null || alias.isEmpty() ? existing.label : alias;
+    }
+
+    private void pinShortcutToHome(
+            AppEntry app,
+            String shortcutId,
+            String label,
+            int slot
+    ) {
+        if (app == null || shortcutId == null || shortcutId.isEmpty()) return;
+
+        ArrayList<String> targetPinned = shortcutIdsForPackage(app, slot, shortcutId);
+        if (!appRepository.pinShortcuts(app, targetPinned)) {
+            Toast.makeText(this, "Shortcut could not be pinned", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+        launcherPreferences.setHomeShortcut(slot, app.componentKey, shortcutId, label);
+        if (oldShortcutApp != null
+                && !oldShortcutApp.componentKey.equals(app.componentKey)) {
+            repinPackageShortcuts(oldShortcutApp);
+        }
+        resolveLauncherConfiguration();
+    }
+
+    private ArrayList<String> shortcutIdsForPackage(
+            AppEntry app,
+            int replacingSlot,
+            String replacementId
+    ) {
+        HashSet<String> ids = new HashSet<>();
+        for (int i = 0; i < LauncherPreferences.MAX_HOME_APPS; i++) {
+            if (i == replacingSlot) continue;
+            if (!app.componentKey.equals(launcherPreferences.homeSlot(i))) continue;
+            String id = launcherPreferences.homeShortcutId(i);
+            if (id != null && !id.isEmpty()) ids.add(id);
+        }
+        if (replacementId != null && !replacementId.isEmpty()) ids.add(replacementId);
+        return new ArrayList<>(ids);
+    }
+
+    private AppEntry shortcutAppAtSlot(int slot) {
+        String id = launcherPreferences.homeShortcutId(slot);
+        if (id == null || id.isEmpty()) return null;
+        return findApp(launcherPreferences.homeSlot(slot));
+    }
+
+    private void repinPackageShortcuts(AppEntry app) {
+        if (app == null) return;
+        appRepository.pinShortcuts(
+                app,
+                shortcutIdsForPackage(app, -1, null)
+        );
+    }
+
+    private void clearHomeSlotWithUndo(int slot, boolean shortcutSlot) {
+        String oldComponent = launcherPreferences.homeSlot(slot);
+        String oldShortcutId = launcherPreferences.homeShortcutId(slot);
+        String oldShortcutLabel = launcherPreferences.homeShortcutLabel(slot);
+        boolean oldExists = launcherPreferences.hasHomeSlot(slot);
+        AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+
+        launcherPreferences.clearHomeSlot(slot);
+        if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
+        resolveLauncherConfiguration();
+
+        showUndo(shortcutSlot ? "Shortcut removed" : "Home slot cleared", () -> {
+            if (oldShortcutId != null && oldComponent != null) {
+                launcherPreferences.setHomeShortcut(
+                        slot,
+                        oldComponent,
+                        oldShortcutId,
+                        oldShortcutLabel
+                );
+                AppEntry restored = findApp(oldComponent);
+                if (restored != null) repinPackageShortcuts(restored);
+            } else if (oldExists) {
+                launcherPreferences.setHomeSlot(slot, oldComponent);
+            } else {
+                launcherPreferences.setHomeSlot(slot, null);
+            }
+            resolveLauncherConfiguration();
+        });
     }
 
     private void openAppInfo(AppEntry app) {
@@ -1115,6 +1445,30 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private void launchApp(AppEntry app) {
         if (app == null) return;
         if (!appRepository.startApp(app)) reloadApps();
+    }
+
+    private void showUndo(String message, Runnable action) {
+        clearUndo();
+        undoAction = action;
+        surface.setTransientMessage(message, true);
+
+        pendingUndoClear = this::clearUndo;
+        mainHandler.postDelayed(pendingUndoClear, 2500L);
+    }
+
+    private void clearUndo() {
+        if (pendingUndoClear != null) {
+            mainHandler.removeCallbacks(pendingUndoClear);
+            pendingUndoClear = null;
+        }
+        undoAction = null;
+        if (surface != null) surface.setTransientMessage("", false);
+    }
+
+    @Override public void onUndoRequested() {
+        Runnable action = undoAction;
+        clearUndo();
+        if (action != null) action.run();
     }
 
     @Override public void onClockTapped() {
@@ -1288,10 +1642,23 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             applyUiConfiguration();
             refreshAliasCache();
             refreshVisibleApps();
+            repinConfiguredShortcuts();
             resolveLauncherConfiguration();
             Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
         } catch (Exception error) {
             Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void repinConfiguredShortcuts() {
+        HashSet<String> handled = new HashSet<>();
+        for (int i = 0; i < LauncherPreferences.MAX_HOME_APPS; i++) {
+            String shortcutId = launcherPreferences.homeShortcutId(i);
+            String component = launcherPreferences.homeSlot(i);
+            if (shortcutId == null || component == null || !handled.add(component)) continue;
+
+            AppEntry app = findApp(component);
+            if (app != null) repinPackageShortcuts(app);
         }
     }
 

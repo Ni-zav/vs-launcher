@@ -2,7 +2,7 @@
     <style name="Theme.VsLauncher" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#000000</item>
-        <item name="android:colorAccent">#FFFFFF</item>
+        <item name="android:colorAccent">#DCDCDC</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#000000</item>
@@ -12,11 +12,11 @@
     </style>
     <style name="Theme.VsLauncher.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
         <item name="android:windowBackground">#000000</item>
-        <item name="android:colorAccent">#FFFFFF</item>
-        <item name="android:textColorPrimary">#FFFFFF</item>
-        <item name="android:textColorSecondary">#FFFFFF</item>
-        <item name="android:colorControlNormal">#FFFFFF</item>
-        <item name="android:colorControlActivated">#FFFFFF</item>
+        <item name="android:colorAccent">#DCDCDC</item>
+        <item name="android:textColorPrimary">#DCDCDC</item>
+        <item name="android:textColorSecondary">#909090</item>
+        <item name="android:colorControlNormal">#909090</item>
+        <item name="android:colorControlActivated">#DCDCDC</item>
         <item name="android:windowNoTitle">false</item>
     </style>
 </resources>
