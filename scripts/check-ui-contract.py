@@ -114,6 +114,10 @@ for forbidden in (".stream(", ".sort(", "Collections.sort("):
     if forbidden in filter_normalized:
         errors.append(f"filterNormalized must stay linear; found {forbidden}")
 
+single_app_result = method_body(main, "singleAppResult")
+if "blocksAppAutoLaunch()" not in single_app_result:
+    errors.append("Singleton app auto-launch must stop for explicit structured utility rows")
+
 build_results = method_body(main, "buildSearchResults")
 for required in (
     "SearchCommand.matchingNormalized(normalizedQuery)",

@@ -90,4 +90,15 @@ final class SearchResult {
     boolean isApp() {
         return type == TYPE_APP && app != null;
     }
+
+    boolean blocksAppAutoLaunch() {
+        if (type == TYPE_APP) return false;
+        if (type == TYPE_COMMAND) return SearchCommand.HELP.equals(id);
+        return type == TYPE_DIAL
+                || type == TYPE_URL
+                || type == TYPE_TIMER
+                || type == TYPE_ALARM
+                || type == TYPE_CALC
+                || type == TYPE_WEB;
+    }
 }

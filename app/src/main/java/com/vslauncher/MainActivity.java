@@ -947,6 +947,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private static SearchResult singleAppResult(List<SearchResult> results) {
         SearchResult only = null;
         for (SearchResult result : results) {
+            if (result.blocksAppAutoLaunch()) return null;
             if (!result.isApp()) continue;
             if (only != null) return null;
             only = result;

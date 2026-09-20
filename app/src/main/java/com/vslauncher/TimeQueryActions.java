@@ -7,6 +7,8 @@ import java.util.regex.Pattern;
 /** Pure-Java parsing for explicit timer/alarm search actions. */
 final class TimeQueryActions {
     private static final int MAX_TIMER_SECONDS = 24 * 60 * 60;
+    private static final int MAX_TIMER_QUERY_LENGTH = 64;
+    private static final int MAX_ALARM_QUERY_LENGTH = 32;
     private static final Pattern TIMER_PART = Pattern.compile(
             "(\\d{1,4})\\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
             Pattern.CASE_INSENSITIVE
@@ -17,7 +19,7 @@ final class TimeQueryActions {
     static TimerSpec timer(String raw) {
         if (raw == null) return null;
         String value = raw.trim().toLowerCase(Locale.ROOT);
-        if (!value.startsWith("timer ")) return null;
+        if (value.length() > MAX_TIMER_QUERY_LENGTH || !value.startsWith("timer ")) return null;
 
         String body = value.substring(6).trim();
         if (body.isEmpty()) return null;
@@ -60,7 +62,7 @@ final class TimeQueryActions {
     }
 
     static AlarmSpec alarmNormalized(String normalized) {
-        if (normalized == null) return null;
+        if (normalized == null || normalized.length() > MAX_ALARM_QUERY_LENGTH) return null;
         if (normalized.startsWith("set alarm ")) {
             normalized = normalized.substring(10).trim();
         } else if (normalized.startsWith("alarm ")) {
