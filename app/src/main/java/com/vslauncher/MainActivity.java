@@ -198,7 +198,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onBackPressed() {
-        if (surface.getPage() != LauncherSurface.PAGE_HOME) {
+        if (surface.getPage() == LauncherSurface.PAGE_APPS) {
+            if (search != null) {
+                enterAppsBrowseMode();
+            } else {
+                showPage(LauncherSurface.PAGE_HOME);
+            }
+            return;
+        }
+
+        if (surface.getPage() == LauncherSurface.PAGE_SETTINGS) {
             showPage(LauncherSurface.PAGE_HOME);
         }
     }
@@ -924,6 +933,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onAppsBrowseGestureStarted() {
         if (surface.getPage() != LauncherSurface.PAGE_APPS || appsBrowseMode) return;
+        enterAppsBrowseMode();
+    }
+
+    @Override public void onAppsSearchRequested() {
+        if (surface.getPage() != LauncherSurface.PAGE_APPS) return;
+        appsBrowseMode = false;
+        if (search == null) addSearch(true);
+        else focusSearchField();
+    }
+
+    private void enterAppsBrowseMode() {
         appsBrowseMode = true;
         removeSearch();
     }
