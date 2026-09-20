@@ -87,10 +87,12 @@ System fonts only:
 ## Interaction contract
 
 Home:
-- left → Apps with focused search
+- left → Apps with focused borderless search
 - right → Settings
 - up → quick-launch app
 - down → intentionally unused
+- Apps heading tap / pull-at-top → focused search
+- Back → Search → Browse → Home
 - long press Home row → change/rename/move/clear
 - tap weather → permission/refresh
 
@@ -155,11 +157,16 @@ Before merging launcher behavior/rendering changes:
 6. Fling long All Apps and Settings lists.
 7. Verify swipe-left enters focused search and requests the keyboard.
 8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
-9. Verify A–Z scrubbing jumps to the nearest available initial.
-10. Test prefix/alias/initials/substring/bounded-fuzzy ordering and singleton auto-launch.
-11. Change, rename, move, and clear Home slots; tap + ADD APP directly.
-12. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
-13. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
+9. Verify A–Z + # scrubbing jumps to the nearest available initial and missing buckets stay visually quieter.
+10. Test accent/punctuation normalization plus prefix/alias/initials/substring/bounded-fuzzy ordering.
+11. Verify a lone app auto-launches even with command rows present; command-only results never auto-fire.
+12. Verify SYSTEM queries plus DIAL/OPEN query actions execute only after deliberate tap/Go.
+13. Pin a native app shortcut into Home, launch it, replace/remove it, Undo removal, export/import it, and verify package pin state remains sane.
+14. Change, rename, move, and clear Home slots; tap + ADD APP directly; verify clear has transient Undo.
+15. Hide an app from long-press and verify transient Undo restores it.
+16. Verify the semantic monochrome scale and no full-row white press inversion.
+17. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
+18. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
 12. Test quick-launch selection.
 13. Test all position/density/text presets.
 14. Toggle each status module and cycle its format/layout modes.
