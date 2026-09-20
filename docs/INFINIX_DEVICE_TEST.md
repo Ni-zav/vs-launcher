@@ -18,29 +18,34 @@ Do not declare a device test PASS from compilation alone.
 
 ---
 
-## Codex retry entrypoint
+## Current X6855 path
 
-For the Android 16 / Infinix X6855 Macrobenchmark freezer retry, use the repository-stored goal:
+The AndroidX controller-freezer investigation is complete for the current
+Infinix X6855 firmware. Exact-PID sticky unfreeze and both documented AOSP
+freezer controls failed to keep the instrumentation controller runnable.
 
-- [CODEX_INFINIX_RETRY_GOAL.md](CODEX_INFINIX_RETRY_GOAL.md)
+Do **not** repeat the Macrobenchmark/freezer workaround loop on this firmware.
 
-The retry runner separates controller-survivability/profile capture from real timing:
+Use the instrumentation-free manual path instead:
+
+- [INFINIX_MANUAL_PROFILE.md](INFINIX_MANUAL_PROFILE.md)
+- [CODEX_INFINIX_MANUAL_PROFILE_GOAL.md](CODEX_INFINIX_MANUAL_PROFILE_GOAL.md)
+
+Primary commands:
 
 ```sh
-bash scripts/infinix-codex-retry.sh preflight
-bash scripts/infinix-codex-retry.sh sticky-profile startup
-bash scripts/infinix-codex-retry.sh sticky-profile journeys
+CAPTURE_ITERATIONS=5 bash scripts/infinix-manual-profile.sh capture
 
-# survivability probe only; timing is not valid evidence
-bash scripts/infinix-codex-retry.sh sticky-probe cold
-
-# final unmonitored measurements
-bash scripts/infinix-codex-retry.sh measure cold
-bash scripts/infinix-codex-retry.sh measure profile
+ITERATIONS=20 STATE_SETTLE_SECONDS=2 \
+  bash scripts/infinix-manual-ab.sh all \
+  device-test-results/manual-profile-.../baseline-prof.txt
 ```
 
-Use `scripts/infinix-freezer-session.sh disable --yes` only after the exact-PID
-sticky path has failed as described in `INFINIX_FREEZER_RESEARCH.md`.
+The older controller/freezer tooling and research remain in the repository as
+historical evidence and for any future firmware/reference-device retest:
+
+- [INFINIX_FREEZER_RESEARCH.md](INFINIX_FREEZER_RESEARCH.md)
+- [CODEX_INFINIX_RETRY_GOAL.md](CODEX_INFINIX_RETRY_GOAL.md)
 
 ---
 
@@ -577,19 +582,29 @@ Do not claim that opening a sideloaded APK automatically proves `speed-profile` 
 
 ---
 
-# 11. Android 15+ manual profile dump fallback
+# 11. API 34+ manual Baseline Profile fallback
 
-The preferred generator is `BaselineProfileRule`.
+On the current X6855 firmware, the AndroidX instrumentation controller is a
+confirmed blocker, so manual collection is the primary device path.
 
-If diagnosing profile collection itself on API 34+, Android also provides:
+Use:
 
 ```sh
+bash scripts/infinix-manual-profile.sh capture
+```
+
+This follows Android's API 34+ manual flow, including:
+
+```sh
+adb shell cmd package compile -f -m verify com.vslauncher
+adb shell pm art clear-app-profiles com.vslauncher
 adb shell pm dump-profiles --dump-classes-and-methods com.vslauncher
 ```
 
-Use this as a diagnostic/fallback, not as a substitute for the automated critical-user-journey generator.
+The resulting HRF stays under `device-test-results/` until the same-device
+manual A/B accepts or rejects it.
 
-Preserve the raw dump in the device-test result directory.
+See [INFINIX_MANUAL_PROFILE.md](INFINIX_MANUAL_PROFILE.md).
 
 ---
 
@@ -642,17 +657,24 @@ Do not commit:
 
 # 13. Merge gate for a generated profile
 
-A generated Baseline Profile should enter `app/src/main/` only if all are true:
+For the current X6855 manual path, a generated Baseline Profile should enter
+`app/src/main/` only if all are true:
 
-1. generation completed on the physical Infinix
-2. generated rules are from the non-obfuscated `baselineProfile` variant
-3. release-like benchmark APK packages the candidate rules
-4. `coldStartupWithBaselineProfile` succeeds
-5. same-device A/B measurement shows a repeatable improvement or at minimum no meaningful regression
-6. frame-oriented journeys show no regression
-7. APK size change is recorded
-8. debug/release build + lint remain green
-9. Android 15+ smoke test remains green
-10. the device-test report is committed with the evidence
+1. manual capture completed on the physical Infinix from the non-R8,
+   non-debuggable `baselineProfile` variant
+2. the human-readable profile is non-empty and sane
+3. the release-like benchmark APK packages the candidate
+4. A and B use the exact same benchmark APK SHA-256
+5. every A sample resets to verify/cleared-profile state
+6. every B sample explicitly installs the packaged profile and verifies
+   `status=speed-profile`
+7. repeated same-device startup measurements show a meaningful repeatable
+   improvement or at minimum no meaningful regression
+8. APK size change is recorded
+9. launcher smoke behavior remains green
+10. ProfileInstaller's skip file is restored/deleted after testing
+11. debug/release build + lint remain green
+12. the committed report labels the result as manual A/B, not Macrobenchmark
 
-If the profile does not measurably help this tiny native launcher, leave it out of production.
+If the profile does not measurably help this tiny native launcher, leave it out
+of production.
