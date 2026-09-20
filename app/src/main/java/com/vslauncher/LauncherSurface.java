@@ -128,6 +128,10 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint appDisabledPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_DISABLED, DesignTokens.BODY);
+    private final Paint settingsPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
+    private final Paint settingsPressedPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint metaPressedPaint =
             textPaint(DesignTokens.META_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint titlePaint =
@@ -1171,7 +1175,7 @@ final class LauncherSurface extends View {
         String value = settingsValues[index];
         boolean pressed = index == pressedSettingsIndex;
 
-        canvas.drawText(label, x, baseline, pressed ? appPressedPaint : appPaint);
+        canvas.drawText(label, x, baseline, pressed ? settingsPressedPaint : settingsPaint);
         if (value != null && !value.isEmpty()) {
             canvas.drawText(
                     value,

@@ -80,6 +80,9 @@ for method in hot_methods:
 settings_row = method_body(surface, "drawSettingsRow")
 if "dividerPaint" in settings_row:
     errors.append("Settings rows must stay dividerless; sections are grouped by whitespace")
+if "settingsPressedPaint : settingsPaint" not in settings_row:
+    errors.append("Apps text-size changes must not resize Settings row labels")
+
 
 search_rows = method_body(surface, "drawSearchRows")
 if "searchHasQuery && i == 0" not in search_rows:
