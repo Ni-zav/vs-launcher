@@ -93,6 +93,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private boolean packageReceiverRegistered;
     private boolean appsBrowseMode;
     private Runnable pendingSingleResultLaunch;
+    private Runnable undoAction;
+    private Runnable pendingUndoClear;
 
     private final Runnable clockTick = new Runnable() {
         @Override public void run() {
@@ -191,6 +193,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override protected void onDestroy() {
+        clearUndo();
         removeSearch();
         unregisterPackageChanges();
         appRepository.close();
@@ -935,6 +938,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             launcherPreferences.setHidden(app.componentKey, true);
                             refreshVisibleApps();
                             resolveLauncherConfiguration();
+                            showUndo(app.label + " hidden", () -> {
+                                launcherPreferences.setHidden(app.componentKey, false);
+                                refreshVisibleApps();
+                                resolveLauncherConfiguration();
+                            });
                             break;
                         case "App info":
                             openAppInfo(app);
@@ -1151,8 +1159,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             break;
                         case "Clear slot":
                         case "Remove shortcut":
-                            clearHomeSlotAndRepin(slot);
-                            resolveLauncherConfiguration();
+                            clearHomeSlotWithUndo(slot, shortcutSlot);
                             break;
                         default:
                             break;
@@ -1342,10 +1349,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         );
     }
 
-    private void clearHomeSlotAndRepin(int slot) {
+    private void clearHomeSlotWithUndo(int slot, boolean shortcutSlot) {
+        String oldComponent = launcherPreferences.homeSlot(slot);
+        String oldShortcutId = launcherPreferences.homeShortcutId(slot);
+        String oldShortcutLabel = launcherPreferences.homeShortcutLabel(slot);
+        boolean oldExists = launcherPreferences.hasHomeSlot(slot);
         AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+
         launcherPreferences.clearHomeSlot(slot);
         if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
+        resolveLauncherConfiguration();
+
+        showUndo(shortcutSlot ? "Shortcut removed" : "Home slot cleared", () -> {
+            if (oldShortcutId != null && oldComponent != null) {
+                launcherPreferences.setHomeShortcut(
+                        slot,
+                        oldComponent,
+                        oldShortcutId,
+                        oldShortcutLabel
+                );
+                AppEntry restored = findApp(oldComponent);
+                if (restored != null) repinPackageShortcuts(restored);
+            } else if (oldExists) {
+                launcherPreferences.setHomeSlot(slot, oldComponent);
+            } else {
+                launcherPreferences.setHomeSlot(slot, null);
+            }
+            resolveLauncherConfiguration();
+        });
     }
 
     private void openAppInfo(AppEntry app) {
@@ -1396,6 +1427,30 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private void launchApp(AppEntry app) {
         if (app == null) return;
         if (!appRepository.startApp(app)) reloadApps();
+    }
+
+    private void showUndo(String message, Runnable action) {
+        clearUndo();
+        undoAction = action;
+        surface.setTransientMessage(message, true);
+
+        pendingUndoClear = this::clearUndo;
+        mainHandler.postDelayed(pendingUndoClear, 2500L);
+    }
+
+    private void clearUndo() {
+        if (pendingUndoClear != null) {
+            mainHandler.removeCallbacks(pendingUndoClear);
+            pendingUndoClear = null;
+        }
+        undoAction = null;
+        if (surface != null) surface.setTransientMessage("", false);
+    }
+
+    @Override public void onUndoRequested() {
+        Runnable action = undoAction;
+        clearUndo();
+        if (action != null) action.run();
     }
 
     @Override public void onClockTapped() {
