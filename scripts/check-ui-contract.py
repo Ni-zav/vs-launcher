@@ -80,6 +80,9 @@ for method in hot_methods:
 settings_row = method_body(surface, "drawSettingsRow")
 if "dividerPaint" in settings_row:
     errors.append("Settings rows must stay dividerless; sections are grouped by whitespace")
+if "settingsPressedPaint : settingsPaint" not in settings_row:
+    errors.append("Apps text-size changes must not resize Settings row labels")
+
 
 search_rows = method_body(surface, "drawSearchRows")
 if "searchHasQuery && i == 0" not in search_rows:
@@ -88,6 +91,38 @@ if "searchHasQuery && i == 0" not in search_rows:
 browse_rows = method_body(surface, "drawBrowseRows")
 if "profileHeaderLeadPx" not in browse_rows:
     errors.append("WORK/PRIVATE headers must retain their quiet leading separation")
+
+if "alphabetActiveIndex" not in browse_rows or "appDisabledPaint" not in browse_rows:
+    errors.append("Alphabet scrubbing must focus the active bucket and dim other app rows")
+if "LauncherLayout.alphabetBucket" in browse_rows:
+    errors.append("Alphabet bucket classification must be cached outside the draw hot path")
+if "item.alphabetBucket == alphabetActiveIndex" not in browse_rows:
+    errors.append("Alphabet scrub highlighting must use cached browse-row buckets")
+
+
+alphabet_rail = method_body(surface, "drawAlphabetRail")
+if "alphabetRailX - alphabetWidths[i] * 0.5f" not in alphabet_rail:
+    errors.append("Alphabet rail glyphs must stay centered on one fixed rail axis")
+if "alphabetActiveIndex * alphabetStepPx" not in alphabet_rail:
+    errors.append("Active alphabet glyph must remain on its own rail position")
+
+accessibility_status = method_body(surface, "accessibilityStatusIdAt")
+if "uiConfig.showWeather && uiConfig.showBattery" not in accessibility_status:
+    errors.append("Status accessibility hit testing must mirror single/paired status layout")
+if "if (uiConfig.showBattery) return A11Y_BATTERY" not in accessibility_status:
+    errors.append("Battery-only status must expose the full status interaction region")
+
+home_rows = method_body(surface, "drawHomeRows")
+for required in ("homeTextXPx", "homeRowHeightPx", "homePaint", "homeHintPaint"):
+    if required not in home_rows:
+        errors.append(f"Home alignment/typography contract missing {required}")
+
+if not re.search(
+    r'ALPHABET_LABELS\s*=\s*\{\s*"#"\s*,\s*"A"',
+    surface,
+    re.MULTILINE,
+):
+    errors.append("Alphabet rail must begin with # followed by A-Z")
 
 for forbidden in ("SharedPreferences", "PackageManager", "LauncherApps", "launcherPreferences"):
     if forbidden in surface:
@@ -184,6 +219,18 @@ for required_token in (
 production_text = gradle
 for path in MAIN_SRC.rglob("*.java"):
     production_text += "\n" + path.read_text(encoding="utf-8")
+
+prefs_source = (MAIN_SRC / "com/vslauncher/LauncherPreferences.java").read_text(encoding="utf-8")
+ui_config_source = (MAIN_SRC / "com/vslauncher/LauncherUiConfig.java").read_text(encoding="utf-8")
+for required in ("ALIGN_LEFT", "ALIGN_CENTER", "ALIGN_RIGHT", "DENSITY_DENSE", "APPS_TEXT_SIZE"):
+    if required not in prefs_source:
+        errors.append(f"Missing minimal layout preference {required}")
+set_text_size = method_body(prefs_source, "setTextSize")
+if "prefs.contains(APPS_TEXT_SIZE)" not in set_text_size:
+    errors.append("First Home text-size change must freeze the legacy shared Apps text size")
+
+if "return 38f;" not in ui_config_source:
+    errors.append("Dense row-height preset must remain 38dp")
 
 for forbidden in (
     "androidx.compose",

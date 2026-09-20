@@ -10,6 +10,7 @@ final class AppListItem {
     final long profileSerial;
     final String label;
     final String value;
+    final int alphabetBucket;
 
     private AppListItem(
             int type,
@@ -17,7 +18,8 @@ final class AppListItem {
             int profileKind,
             long profileSerial,
             String label,
-            String value
+            String value,
+            int alphabetBucket
     ) {
         this.type = type;
         this.app = app;
@@ -25,10 +27,19 @@ final class AppListItem {
         this.profileSerial = profileSerial;
         this.label = label;
         this.value = value;
+        this.alphabetBucket = alphabetBucket;
     }
 
     static AppListItem app(AppEntry app) {
-        return new AppListItem(TYPE_APP, app, app.profileKind, app.userSerial, "", "");
+        return new AppListItem(
+                TYPE_APP,
+                app,
+                app.profileKind,
+                app.userSerial,
+                "",
+                "",
+                LauncherLayout.alphabetBucket(app.normalizedLabel)
+        );
     }
 
     static AppListItem profile(
@@ -43,7 +54,8 @@ final class AppListItem {
                 profileKind,
                 profileSerial,
                 label,
-                value == null ? "" : value
+                value == null ? "" : value,
+                -1
         );
     }
 

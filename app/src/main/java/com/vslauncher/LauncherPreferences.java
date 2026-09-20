@@ -30,6 +30,11 @@ final class LauncherPreferences {
     static final String POSITION_CENTER = "center";
     static final String POSITION_BOTTOM = "bottom";
 
+    static final String ALIGN_LEFT = "left";
+    static final String ALIGN_CENTER = "center";
+    static final String ALIGN_RIGHT = "right";
+
+    static final String DENSITY_DENSE = "dense";
     static final String DENSITY_COMPACT = "compact";
     static final String DENSITY_NORMAL = "normal";
     static final String DENSITY_SPACIOUS = "spacious";
@@ -66,8 +71,10 @@ final class LauncherPreferences {
     private static final String HOME_MAX = "home_max";
     private static final String QUICK_APP = "quick_app";
     private static final String HOME_POSITION = "home_position";
+    private static final String HOME_ALIGNMENT = "home_alignment";
     private static final String HOME_DENSITY = "home_density";
     private static final String HOME_TEXT_SIZE = "home_text_size";
+    private static final String APPS_TEXT_SIZE = "apps_text_size";
     private static final String SHOW_TIME = "status_time";
     private static final String SHOW_DATE = "status_date";
     private static final String SHOW_WEATHER = "status_weather";
@@ -193,14 +200,24 @@ final class LauncherPreferences {
                 oneOf(value, POSITION_TOP, POSITION_CENTER, POSITION_BOTTOM)).apply();
     }
 
+    String homeAlignment() {
+        return oneOf(prefs.getString(HOME_ALIGNMENT, ALIGN_LEFT),
+                ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT);
+    }
+
+    void setHomeAlignment(String value) {
+        prefs.edit().putString(HOME_ALIGNMENT,
+                oneOf(value, ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT)).apply();
+    }
+
     String density() {
         return oneOf(prefs.getString(HOME_DENSITY, DENSITY_NORMAL),
-                DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS);
+                DENSITY_DENSE, DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS);
     }
 
     void setDensity(String value) {
         prefs.edit().putString(HOME_DENSITY,
-                oneOf(value, DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS)).apply();
+                oneOf(value, DENSITY_DENSE, DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS)).apply();
     }
 
     String textSize() {
@@ -209,7 +226,25 @@ final class LauncherPreferences {
     }
 
     void setTextSize(String value) {
-        prefs.edit().putString(HOME_TEXT_SIZE,
+        SharedPreferences.Editor edit = prefs.edit();
+        if (!prefs.contains(APPS_TEXT_SIZE)) {
+            // Preserve the pre-0.9 shared text size when Home typography is first changed.
+            edit.putString(APPS_TEXT_SIZE, textSize());
+        }
+        edit.putString(
+                HOME_TEXT_SIZE,
+                oneOf(value, TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE)
+        ).apply();
+    }
+
+    String appsTextSize() {
+        if (!prefs.contains(APPS_TEXT_SIZE)) return textSize();
+        return oneOf(prefs.getString(APPS_TEXT_SIZE, TEXT_MEDIUM),
+                TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE);
+    }
+
+    void setAppsTextSize(String value) {
+        prefs.edit().putString(APPS_TEXT_SIZE,
                 oneOf(value, TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE)).apply();
     }
 
@@ -356,8 +391,10 @@ final class LauncherPreferences {
         root.put("homeMax", homeMax());
         root.put("quickApp", JSONObject.wrap(quickApp()));
         root.put("homePosition", homePosition());
+        root.put("homeAlignment", homeAlignment());
         root.put("density", density());
         root.put("textSize", textSize());
+        root.put("appsTextSize", appsTextSize());
         root.put("showTime", showTime());
         root.put("showDate", showDate());
         root.put("showWeather", showWeather());
@@ -409,10 +446,19 @@ final class LauncherPreferences {
         putNullable(edit, QUICK_APP, nullableString(root, "quickApp"));
         edit.putString(HOME_POSITION, oneOf(root.optString("homePosition", POSITION_TOP),
                 POSITION_TOP, POSITION_CENTER, POSITION_BOTTOM));
+        edit.putString(HOME_ALIGNMENT, oneOf(root.optString("homeAlignment", ALIGN_LEFT),
+                ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT));
         edit.putString(HOME_DENSITY, oneOf(root.optString("density", DENSITY_NORMAL),
-                DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS));
-        edit.putString(HOME_TEXT_SIZE, oneOf(root.optString("textSize", TEXT_MEDIUM),
-                TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE));
+                DENSITY_DENSE, DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_SPACIOUS));
+        String importedHomeText = oneOf(root.optString("textSize", TEXT_MEDIUM),
+                TEXT_SMALL, TEXT_MEDIUM, TEXT_LARGE);
+        edit.putString(HOME_TEXT_SIZE, importedHomeText);
+        edit.putString(APPS_TEXT_SIZE, oneOf(
+                root.optString("appsTextSize", importedHomeText),
+                TEXT_SMALL,
+                TEXT_MEDIUM,
+                TEXT_LARGE
+        ));
         edit.putBoolean(SHOW_TIME, root.optBoolean("showTime", true));
         edit.putBoolean(SHOW_DATE, root.optBoolean("showDate", true));
         edit.putBoolean(SHOW_WEATHER, root.optBoolean("showWeather", true));

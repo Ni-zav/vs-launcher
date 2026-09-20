@@ -157,7 +157,7 @@ Before merging launcher behavior/rendering changes:
 6. Fling long Apps and Settings lists.
 7. Verify swipe-left enters focused search and requests the keyboard.
 8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
-9. Verify A–Z + # scrubbing jumps to the nearest available initial and missing buckets stay visually quieter.
+9. Verify the rail is ordered `#–Z`, every glyph is centered on one fixed axis, unavailable touches snap to the actual available bucket, matching apps brighten, unrelated apps dim, and release restores normal luminance.
 10. Test accent/punctuation normalization plus prefix/alias/initials/substring/bounded-fuzzy ordering.
 11. Verify a lone app auto-launches beside passive SYSTEM rows, while explicit DIAL/OPEN/TIMER/ALARM/CALC/WEB/GUIDE intent suppresses app auto-launch; non-app results never auto-fire.
 12. Verify typed search follows the cached normalized-query path.
@@ -169,12 +169,12 @@ Before merging launcher behavior/rendering changes:
 18. Pin a native app shortcut into Home, launch it, replace/remove it, Undo removal, export/import it, and verify package pin state remains sane.
 19. Change, rename, move, and clear Home slots; tap + ADD APP directly; verify clear has transient Undo.
 20. Hide an app from long-press and verify transient Undo restores it.
-21. Verify the semantic monochrome scale, dividerless Settings rows, profile-header spacing, and no full-row white press inversion.
+21. Verify the semantic monochrome scale, dividerless Settings rows, larger title→section/section→row rhythm, profile-header spacing, and no full-row white press inversion.
 22. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
 23. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
-24. Test quick-launch selection, all position/density/text presets, animation speeds, and haptics.
-25. Toggle each status module and cycle its format/layout modes.
-26. Export and re-import configuration from a 0.7-era config and confirm no migration is required.
+24. Test Home Top/Center/Bottom × Left/Center/Right, Dense/Compact/Normal/Spacious, independent Home/Apps Small/Medium/Large text, large-text row safety, quick-launch, animation speeds, and haptics.
+25. Toggle each status module and cycle its format/layout modes; verify weather+battery pair left/right while either one alone uses the natural left status position and matching tap/accessibility bounds.
+26. Export/re-import current config and import a pre-0.9 config; confirm missing alignment defaults Left and the legacy shared text size is inherited by both Home and Apps without a format migration.
 27. Install/uninstall an app and confirm indexing/state remains safe.
 28. Test 12h/24h/system time, date styles, battery states/modes, and weather permission/offline paths.
 29. Test IME/system insets and Android 15+ fullscreen startup.

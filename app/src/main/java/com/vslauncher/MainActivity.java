@@ -1104,9 +1104,18 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         LauncherPreferences.POSITION_BOTTOM
                 ));
                 break;
+            case LauncherSurface.ACTION_HOME_ALIGNMENT:
+                launcherPreferences.setHomeAlignment(next(
+                        uiConfig.homeAlignment,
+                        LauncherPreferences.ALIGN_LEFT,
+                        LauncherPreferences.ALIGN_CENTER,
+                        LauncherPreferences.ALIGN_RIGHT
+                ));
+                break;
             case LauncherSurface.ACTION_HOME_DENSITY:
                 launcherPreferences.setDensity(next(
                         uiConfig.density,
+                        LauncherPreferences.DENSITY_DENSE,
                         LauncherPreferences.DENSITY_COMPACT,
                         LauncherPreferences.DENSITY_NORMAL,
                         LauncherPreferences.DENSITY_SPACIOUS
@@ -1115,6 +1124,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             case LauncherSurface.ACTION_HOME_TEXT:
                 launcherPreferences.setTextSize(next(
                         uiConfig.textSize,
+                        LauncherPreferences.TEXT_SMALL,
+                        LauncherPreferences.TEXT_MEDIUM,
+                        LauncherPreferences.TEXT_LARGE
+                ));
+                break;
+            case LauncherSurface.ACTION_APPS_TEXT:
+                launcherPreferences.setAppsTextSize(next(
+                        uiConfig.appsTextSize,
                         LauncherPreferences.TEXT_SMALL,
                         LauncherPreferences.TEXT_MEDIUM,
                         LauncherPreferences.TEXT_LARGE
@@ -1634,13 +1651,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 "HOME\n"
                         + "Swipe left: search · right: settings · up: quick app\n"
                         + "Tap time/date/battery/weather for their native actions.\n\n"
+                        + "CUSTOMIZE\n"
+                        + "Home: position, left/center/right alignment, density, Home text.\n"
+                        + "Apps: separate Apps text size. Dense is the tightest row preset.\n\n"
                         + "SEARCH\n"
                         + "Type an app name. One stable app result opens automatically.\n"
                         + "Go/Enter runs the first result. Useful queries:\n"
                         + "timer 10m · alarm 07:30 · 23*17 · wifi · example.com\n"
                         + "Type help to reopen this guide.\n\n"
                         + "APPS\n"
-                        + "Start scrolling search to enter browse mode. Use A–Z + # on the right.\n"
+                        + "Start scrolling search to enter browse mode. Use the #–Z rail on the right.\n"
+                        + "Hold the rail: the active initial stays bright while other apps recede.\n"
                         + "Tap APPS or pull down at the top to search again.\n\n"
                         + "LONG PRESS\n"
                         + "Apps: shortcuts, pin to Home, hide, info, uninstall.\n"

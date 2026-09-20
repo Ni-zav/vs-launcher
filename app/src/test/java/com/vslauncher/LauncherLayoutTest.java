@@ -6,16 +6,36 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class LauncherLayoutTest {
-    @Test public void alphabetBucketsIncludeFallbackHash() {
-        assertEquals(0, LauncherLayout.alphabetBucket("alpha"));
-        assertEquals(25, LauncherLayout.alphabetBucket("zeta"));
-        assertEquals(26, LauncherLayout.alphabetBucket("1password"));
-        assertEquals(26, LauncherLayout.alphabetBucket("µtorrent"));
-        assertEquals(26, LauncherLayout.alphabetBucket("数字"));
+    @Test public void alphabetBucketsStartWithFallbackHash() {
+        assertEquals(0, LauncherLayout.alphabetBucket("1password"));
+        assertEquals(0, LauncherLayout.alphabetBucket("µtorrent"));
+        assertEquals(0, LauncherLayout.alphabetBucket("数字"));
+        assertEquals(1, LauncherLayout.alphabetBucket("alpha"));
+        assertEquals(26, LauncherLayout.alphabetBucket("zeta"));
+    }
+
+    @Test public void alphabetScrubSnapsToActualAvailableBucket() {
+        int[] first = new int[27];
+        java.util.Arrays.fill(first, -1);
+        first[0] = 0;
+        first[2] = 4;
+        first[5] = 9;
+
+        assertEquals(0, LauncherLayout.nearestAvailableBucket(first, 0));
+        assertEquals(2, LauncherLayout.nearestAvailableBucket(first, 1));
+        assertEquals(5, LauncherLayout.nearestAvailableBucket(first, 4));
+        assertEquals(2, LauncherLayout.nearestAvailableBucket(first, 3));
+    }
+
+    @Test public void denseHomeRowsGrowOnlyWhenTextNeedsIt() {
+        assertEquals(38f, LauncherLayout.homeRowHeight(38f, 19f), 0.001f);
+        assertEquals(39.6f, LauncherLayout.homeRowHeight(38f, 22f), 0.001f);
+        assertEquals(44f, LauncherLayout.homeRowHeight(44f, 22f), 0.001f);
+        assertEquals(51.48f, LauncherLayout.homeRowHeight(38f, 28.6f), 0.001f);
     }
 
     @Test public void visibleRowsFitCommonPhoneHeights() {
-        float[] rowHeights = {44f, 54f, 64f};
+        float[] rowHeights = {38f, 44f, 54f, 64f};
         float[] contentHeights = {320f, 480f, 640f, 760f};
 
         for (float rowHeight : rowHeights) {
@@ -43,17 +63,17 @@ public final class LauncherLayoutTest {
     }
 
     @Test public void sectionedSettingsRowsNeverOverlap() {
-        float[] rows = new float[20];
+        float[] rows = new float[22];
         float[] sections = new float[6];
-        int[] starts = {0, 4, 13, 16, 17, 19};
+        int[] starts = {0, 5, 14, 17, 19, 21};
 
         LauncherLayout.fillSectionedRows(
                 rows,
                 sections,
                 100f,
                 54f,
-                28f,
-                11f,
+                32f,
+                16f,
                 starts
         );
 
@@ -62,11 +82,15 @@ public final class LauncherLayoutTest {
         }
 
         assertTrue(rows[0] > 100f);
-        assertTrue(rows[4] > rows[3] + 54f);
-        assertTrue(rows[13] > rows[12] + 54f);
-        assertTrue(rows[16] > rows[15] + 54f);
+        assertTrue(rows[5] > rows[4] + 54f);
+        assertTrue(rows[14] > rows[13] + 54f);
         assertTrue(rows[17] > rows[16] + 54f);
         assertTrue(rows[19] > rows[18] + 54f);
+        assertTrue(rows[21] > rows[20] + 54f);
+
+        // Each section title has breathing room from both adjacent row groups.
+        assertEquals(16f, sections[1] - (rows[4] + 54f), 0.001f);
+        assertEquals(16f, rows[5] - sections[1], 0.001f);
     }
 
     @Test public void visibleRangeIsClamped() {

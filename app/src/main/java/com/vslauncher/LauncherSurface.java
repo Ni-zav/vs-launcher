@@ -45,10 +45,12 @@ final class LauncherSurface extends View {
     static final int ACTION_EXPORT_CONFIG = 16;
     static final int ACTION_IMPORT_CONFIG = 17;
     static final int ACTION_HELP = 18;
+    static final int ACTION_HOME_ALIGNMENT = 19;
+    static final int ACTION_APPS_TEXT = 20;
 
-    private static final int SETTINGS_ROW_COUNT = 20;
+    private static final int SETTINGS_ROW_COUNT = 22;
     private static final int SETTINGS_SECTION_COUNT = 6;
-    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17, 19};
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 5, 14, 17, 19, 21};
     private static final String[] SETTINGS_SECTION_LABELS = {
             "HOME", "STATUS", "GESTURES", "APPS", "DATA", "HELP"
     };
@@ -76,8 +78,8 @@ final class LauncherSurface extends View {
     }
 
     private static final String[] ALPHABET_LABELS = {
-            "A","B","C","D","E","F","G","H","I","J","K","L","M",
-            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"
+            "#","A","B","C","D","E","F","G","H","I","J","K","L","M",
+            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
     };
 
     private static final int GESTURE_NONE = 0;
@@ -104,6 +106,16 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
     private final Paint labelPaint =
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint labelPressedPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.FOCUS, DesignTokens.LABEL);
+    private final Paint homePaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
+    private final Paint homePressedPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
+    private final Paint homeHintPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint homeHintPressedPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.FOCUS, DesignTokens.LABEL);
     private final Paint alphabetPaint =
             textPaint(9f, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint alphabetUnavailablePaint =
@@ -114,8 +126,14 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint appPressedPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
+    private final Paint appDisabledPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_DISABLED, DesignTokens.BODY);
+    private final Paint settingsPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
+    private final Paint settingsPressedPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint metaPressedPaint =
-            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
+            textPaint(DesignTokens.META_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
@@ -172,6 +190,8 @@ final class LauncherSurface extends View {
     private float leftPx;
     private float rightPx;
     private float rowHeightPx;
+    private float homeRowHeightPx;
+    private float homeTextXPx;
     private float homeListStartPx;
     private float settingsMaxRowTopPx;
     private float settingsQuickRowTopPx;
@@ -218,6 +238,7 @@ final class LauncherSurface extends View {
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
     private float settingsSectionHeaderHeightPx;
+    private float settingsSectionLabelOffsetPx;
     private float profileHeaderLeadPx;
     private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
     private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
@@ -238,7 +259,6 @@ final class LauncherSurface extends View {
     private float alphabetRailX;
     private float alphabetStepPx;
     private float alphabetFirstBaselinePx;
-    private float alphabetActiveBaselinePx;
     private float appsSearchPullThresholdPx;
     private float transientBaselinePx;
     private float transientTapTopPx;
@@ -353,9 +373,28 @@ final class LauncherSurface extends View {
 
     void setUiConfig(LauncherUiConfig config) {
         uiConfig = config == null ? LauncherUiConfig.defaults() : config;
-        appPaint.setTextSize(sp(uiConfig.appTextSp()));
-        appPrimaryPaint.setTextSize(sp(uiConfig.appTextSp()));
-        appPressedPaint.setTextSize(sp(uiConfig.appTextSp()));
+
+        float homeTextPx = sp(uiConfig.homeTextSp());
+        homePaint.setTextSize(homeTextPx);
+        homePressedPaint.setTextSize(homeTextPx);
+
+        float appTextPx = sp(uiConfig.appTextSp());
+        appPaint.setTextSize(appTextPx);
+        appPrimaryPaint.setTextSize(appTextPx);
+        appPressedPaint.setTextSize(appTextPx);
+        appDisabledPaint.setTextSize(appTextPx);
+
+        Paint.Align homeAlign = Paint.Align.LEFT;
+        if (LauncherPreferences.ALIGN_CENTER.equals(uiConfig.homeAlignment)) {
+            homeAlign = Paint.Align.CENTER;
+        } else if (LauncherPreferences.ALIGN_RIGHT.equals(uiConfig.homeAlignment)) {
+            homeAlign = Paint.Align.RIGHT;
+        }
+        homePaint.setTextAlign(homeAlign);
+        homePressedPaint.setTextAlign(homeAlign);
+        homeHintPaint.setTextAlign(homeAlign);
+        homeHintPressedPaint.setTextAlign(homeAlign);
+
         recalculateGeometry();
         refreshSettingsValueCache();
         invalidate();
@@ -453,15 +492,12 @@ final class LauncherSurface extends View {
 
         for (int index = 0; index < browseItems.size(); index++) {
             AppListItem item = browseItems.get(index);
-            if (item.isApp()) cacheAlphabetRow(index, item.app);
+            if (!item.isApp()) continue;
+            int bucket = item.alphabetBucket;
+            if (bucket >= 0 && alphabetFirstIndex[bucket] < 0) {
+                alphabetFirstIndex[bucket] = index;
+            }
         }
-    }
-
-    private void cacheAlphabetRow(int row, AppEntry app) {
-        String normalized = app.normalizedLabel;
-        if (normalized.isEmpty()) return;
-        int bucket = LauncherLayout.alphabetBucket(normalized);
-        if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = row;
     }
 
     void setSearchActive(boolean active) {
@@ -650,10 +686,21 @@ final class LauncherSurface extends View {
         leftPx = dp(DesignTokens.PAGE_HORIZONTAL_DP);
         rightPx = Math.max(leftPx, getWidth() - leftPx);
         rowHeightPx = dp(uiConfig.rowHeightDp());
+        homeRowHeightPx = LauncherLayout.homeRowHeight(
+                rowHeightPx,
+                sp(uiConfig.homeTextSp())
+        );
+        if (LauncherPreferences.ALIGN_CENTER.equals(uiConfig.homeAlignment)) {
+            homeTextXPx = getWidth() * 0.5f;
+        } else if (LauncherPreferences.ALIGN_RIGHT.equals(uiConfig.homeAlignment)) {
+            homeTextXPx = rightPx;
+        } else {
+            homeTextXPx = leftPx;
+        }
         contentTopPx = topInset + dp(28f);
         settingsMaxRowTopPx = contentTopPx + dp(72f);
         settingsQuickRowTopPx = contentTopPx + dp(198f);
-        settingsViewportTopPx = contentTopPx + dp(42f);
+        settingsViewportTopPx = contentTopPx + dp(48f);
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
         float appsBottomReserveDp = searchActive ? 96f : 20f;
@@ -662,13 +709,12 @@ final class LauncherSurface extends View {
                 getHeight() - bottomInset - dp(appsBottomReserveDp)
         );
         alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
-        alphabetRailX = Math.max(0f, getWidth() - dp(8f));
+        alphabetRailX = Math.max(0f, getWidth() - dp(13f));
         alphabetStepPx = Math.max(
                 1f,
                 (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length
         );
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
-        alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
         appsSearchPullThresholdPx = dp(34f);
         float transientReserveDp = searchActive ? 76f : 18f;
         transientBaselinePx = getHeight() - bottomInset - dp(transientReserveDp);
@@ -706,14 +752,15 @@ final class LauncherSurface extends View {
         gestureThresholdPx = dp(64f);
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
-        settingsSectionHeaderHeightPx = dp(28f);
+        settingsSectionHeaderHeightPx = dp(32f);
+        settingsSectionLabelOffsetPx = dp(16f);
         profileHeaderLeadPx = dp(DesignTokens.PROFILE_HEADER_LEAD_DP);
         recalculateSettingsGeometry();
 
         float defaultHomeStart = contentTopPx + dp(164f);
         float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
         float available = Math.max(0f, homeEnd - defaultHomeStart);
-        float requestedHeight = maxHomeApps * rowHeightPx;
+        float requestedHeight = maxHomeApps * homeRowHeightPx;
 
         if (requestedHeight < available
                 && LauncherPreferences.POSITION_CENTER.equals(uiConfig.homePosition)) {
@@ -727,7 +774,7 @@ final class LauncherSurface extends View {
 
         visibleHomeRowsCache = LauncherLayout.visibleRows(
                 maxHomeApps,
-                rowHeightPx,
+                homeRowHeightPx,
                 homeListStartPx,
                 homeEnd
         );
@@ -740,7 +787,7 @@ final class LauncherSurface extends View {
                 settingsViewportTopPx,
                 rowHeightPx,
                 settingsSectionHeaderHeightPx,
-                sp(DesignTokens.LABEL_SP),
+                settingsSectionLabelOffsetPx,
                 SETTINGS_SECTION_STARTS
         );
     }
@@ -782,15 +829,40 @@ final class LauncherSurface extends View {
         if (uiConfig.showBattery) {
             boolean icon = !LauncherPreferences.BATTERY_PERCENT.equals(uiConfig.batteryMode);
             boolean percent = !LauncherPreferences.BATTERY_ICON.equals(uiConfig.batteryMode);
+            boolean batterySharesStatusLine = uiConfig.showWeather;
 
-            if (icon && percent) {
-                float batteryTextX = right - batteryTextWidth;
-                drawBattery(canvas, batteryTextX - batteryTextGapPx, statusBaseline - batteryTopOffsetPx);
-                canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
-            } else if (icon) {
-                drawBattery(canvas, right - batteryOnlyRightInsetPx, statusBaseline - batteryTopOffsetPx);
+            if (batterySharesStatusLine) {
+                if (icon && percent) {
+                    float batteryTextX = right - batteryTextWidth;
+                    drawBattery(
+                            canvas,
+                            batteryTextX - batteryTextGapPx,
+                            statusBaseline - batteryTopOffsetPx
+                    );
+                    canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
+                } else if (icon) {
+                    drawBattery(
+                            canvas,
+                            right - batteryOnlyRightInsetPx,
+                            statusBaseline - batteryTopOffsetPx
+                    );
+                } else {
+                    canvas.drawText(
+                            batteryText,
+                            right - batteryTextWidth,
+                            statusBaseline,
+                            batteryTextPaint
+                    );
+                }
             } else {
-                canvas.drawText(batteryText, right - batteryTextWidth, statusBaseline, batteryTextPaint);
+                float batteryX = x + chargingXOffsetPx;
+                if (icon) {
+                    drawBattery(canvas, batteryX, statusBaseline - batteryTopOffsetPx);
+                }
+                if (percent) {
+                    float batteryTextX = icon ? batteryX + batteryTextGapPx : x;
+                    canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
+                }
             }
         }
 
@@ -800,9 +872,7 @@ final class LauncherSurface extends View {
     private void drawHomeRows(Canvas canvas, float startY, int count) {
         if (count <= 0) return;
 
-        float x = left();
-        float right = getWidth() - x;
-        float rowHeight = rowHeightPx;
+        float rowHeight = homeRowHeightPx;
         float baselineOffset = rowHeight * 0.62f;
         boolean emptyHintDrawn = false;
 
@@ -811,17 +881,17 @@ final class LauncherSurface extends View {
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
             boolean pressed = index == pressedHomeIndex;
 
-            Paint rowPaint = pressed ? appPressedPaint : appPaint;
-            Paint hintPaint = pressed ? metaPressedPaint : labelPaint;
+            Paint rowPaint = pressed ? homePressedPaint : homePaint;
+            Paint hintPaint = pressed ? homeHintPressedPaint : homeHintPaint;
 
             String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
             if (app != null) {
                 String label = configuredLabel.isEmpty() ? app.label : configuredLabel;
-                canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
+                canvas.drawText(label, homeTextXPx, rowTop + baselineOffset, rowPaint);
             } else if (!configuredLabel.isEmpty()) {
-                canvas.drawText(configuredLabel, x, rowTop + baselineOffset, hintPaint);
+                canvas.drawText(configuredLabel, homeTextXPx, rowTop + baselineOffset, hintPaint);
             } else if (!emptyHintDrawn) {
-                canvas.drawText("+ ADD APP", x, rowTop + baselineOffset, hintPaint);
+                canvas.drawText("+ ADD APP", homeTextXPx, rowTop + baselineOffset, hintPaint);
                 emptyHintDrawn = true;
             }
         }
@@ -915,7 +985,7 @@ final class LauncherSurface extends View {
             float baseline = alphabetFirstBaselinePx + i * alphabetStepPx;
             canvas.drawText(
                     ALPHABET_LABELS[i],
-                    alphabetRailX - alphabetWidths[i],
+                    alphabetRailX - alphabetWidths[i] * 0.5f,
                     baseline,
                     alphabetFirstIndex[i] >= 0 ? alphabetPaint : alphabetUnavailablePaint
             );
@@ -923,10 +993,11 @@ final class LauncherSurface extends View {
 
         if (alphabetScrubbing && alphabetActiveIndex >= 0) {
             String active = ALPHABET_LABELS[alphabetActiveIndex];
+            float baseline = alphabetFirstBaselinePx + alphabetActiveIndex * alphabetStepPx;
             canvas.drawText(
                     active,
-                    rightPx - alphabetActiveWidths[alphabetActiveIndex],
-                    alphabetActiveBaselinePx,
+                    alphabetRailX - alphabetActiveWidths[alphabetActiveIndex] * 0.5f,
+                    baseline,
                     titlePaint
             );
         }
@@ -1029,19 +1100,24 @@ final class LauncherSurface extends View {
             boolean pressed = i == pressedAppIndex;
 
             if (item.isApp()) {
-                canvas.drawText(
-                        item.app.label,
-                        x,
-                        rowTop + baselineOffset,
-                        pressed ? appPressedPaint : appPaint
-                );
+                Paint rowPaint;
+                if (pressed) {
+                    rowPaint = appPressedPaint;
+                } else if (alphabetScrubbing && alphabetActiveIndex >= 0) {
+                    rowPaint = item.alphabetBucket == alphabetActiveIndex
+                            ? appPrimaryPaint
+                            : appDisabledPaint;
+                } else {
+                    rowPaint = appPaint;
+                }
+                canvas.drawText(item.app.label, x, rowTop + baselineOffset, rowPaint);
             } else {
                 float profileBaseline = rowTop + baselineOffset + profileHeaderLeadPx;
                 canvas.drawText(
                         item.label,
                         x,
                         profileBaseline,
-                        pressed ? metaPressedPaint : labelPaint
+                        pressed ? labelPressedPaint : labelPaint
                 );
                 if (!item.value.isEmpty()) {
                     canvas.drawText(
@@ -1095,7 +1171,7 @@ final class LauncherSurface extends View {
         String value = settingsValues[index];
         boolean pressed = index == pressedSettingsIndex;
 
-        canvas.drawText(label, x, baseline, pressed ? appPressedPaint : appPaint);
+        canvas.drawText(label, x, baseline, pressed ? settingsPressedPaint : settingsPaint);
         if (value != null && !value.isEmpty()) {
             canvas.drawText(
                     value,
@@ -1111,24 +1187,26 @@ final class LauncherSurface extends View {
         switch (index) {
             case 0: return "Visible apps";
             case 1: return "Home position";
-            case 2: return "Density";
-            case 3: return "Text size";
-            case 4: return "Time";
-            case 5: return "Date";
-            case 6: return "Weather";
-            case 7: return "Battery";
-            case 8: return "Status layout";
-            case 9: return "Time format";
-            case 10: return "Date style";
-            case 11: return "Weather detail";
-            case 12: return "Battery detail";
-            case 13: return "Swipe up";
-            case 14: return "Animation";
-            case 15: return "Haptics";
-            case 16: return "Hidden apps";
-            case 17: return "Export config";
-            case 18: return "Import config";
-            case 19: return "How to use";
+            case 2: return "Alignment";
+            case 3: return "Density";
+            case 4: return "Home text";
+            case 5: return "Time";
+            case 6: return "Date";
+            case 7: return "Weather";
+            case 8: return "Battery";
+            case 9: return "Status layout";
+            case 10: return "Time format";
+            case 11: return "Date style";
+            case 12: return "Weather detail";
+            case 13: return "Battery detail";
+            case 14: return "Swipe up";
+            case 15: return "Animation";
+            case 16: return "Haptics";
+            case 17: return "Apps text";
+            case 18: return "Hidden apps";
+            case 19: return "Export config";
+            case 20: return "Import config";
+            case 21: return "How to use";
             default: return "";
         }
     }
@@ -1139,34 +1217,36 @@ final class LauncherSurface extends View {
             switch (index) {
                 case 0: value = Integer.toString(maxHomeApps); break;
                 case 1: value = titleCase(uiConfig.homePosition); break;
-                case 2: value = titleCase(uiConfig.density); break;
-                case 3: value = titleCase(uiConfig.textSize); break;
-                case 4: value = onOff(uiConfig.showTime); break;
-                case 5: value = onOff(uiConfig.showDate); break;
-                case 6: value = onOff(uiConfig.showWeather); break;
-                case 7: value = onOff(uiConfig.showBattery); break;
-                case 8:
+                case 2: value = titleCase(uiConfig.homeAlignment); break;
+                case 3: value = titleCase(uiConfig.density); break;
+                case 4: value = titleCase(uiConfig.textSize); break;
+                case 5: value = onOff(uiConfig.showTime); break;
+                case 6: value = onOff(uiConfig.showDate); break;
+                case 7: value = onOff(uiConfig.showWeather); break;
+                case 8: value = onOff(uiConfig.showBattery); break;
+                case 9:
                     if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) value = "Date first";
                     else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) value = "Compact";
                     else value = "Time first";
                     break;
-                case 9:
+                case 10:
                     if (LauncherPreferences.CLOCK_12.equals(uiConfig.clockFormat)) value = "12h";
                     else if (LauncherPreferences.CLOCK_24.equals(uiConfig.clockFormat)) value = "24h";
                     else value = "System";
                     break;
-                case 10: value = titleCase(uiConfig.dateStyle); break;
-                case 11:
+                case 11: value = titleCase(uiConfig.dateStyle); break;
+                case 12:
                     if (LauncherPreferences.WEATHER_TEMP.equals(uiConfig.weatherMode)) value = "Temperature";
                     else if (LauncherPreferences.WEATHER_CONDITION.equals(uiConfig.weatherMode)) value = "Condition";
                     else value = "Both";
                     break;
-                case 12: value = titleCase(uiConfig.batteryMode); break;
-                case 13: value = quickAppLabel; break;
-                case 14: value = titleCase(uiConfig.animationSpeed); break;
-                case 15: value = onOff(uiConfig.haptics); break;
-                case 16: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
-                case 19: value = "Guide"; break;
+                case 13: value = titleCase(uiConfig.batteryMode); break;
+                case 14: value = quickAppLabel; break;
+                case 15: value = titleCase(uiConfig.animationSpeed); break;
+                case 16: value = onOff(uiConfig.haptics); break;
+                case 17: value = titleCase(uiConfig.appsTextSize); break;
+                case 18: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
+                case 21: value = "Guide"; break;
                 default: value = ""; break;
             }
             settingsValues[index] = value;
@@ -1429,28 +1509,13 @@ final class LauncherSurface extends View {
         int requested = (int) ((y - appsViewportTopPx) / alphabetStepPx);
         requested = Math.max(0, Math.min(ALPHABET_LABELS.length - 1, requested));
 
-        int actual = nearestAlphabetIndex(requested);
+        int actual = LauncherLayout.nearestAvailableBucket(alphabetFirstIndex, requested);
         alphabetActiveIndex = actual >= 0 ? actual : requested;
         if (actual >= 0) {
             int row = alphabetFirstIndex[actual];
             appScroll = clamp(row * rowHeightPx, 0f, maxAppScroll());
         }
         postInvalidateOnAnimation();
-    }
-
-    private int nearestAlphabetIndex(int requested) {
-        if (alphabetFirstIndex[requested] >= 0) return requested;
-        for (int distance = 1; distance < ALPHABET_LABELS.length; distance++) {
-            int forward = requested + distance;
-            if (forward < ALPHABET_LABELS.length && alphabetFirstIndex[forward] >= 0) {
-                return forward;
-            }
-            int backward = requested - distance;
-            if (backward >= 0 && alphabetFirstIndex[backward] >= 0) {
-                return backward;
-            }
-        }
-        return -1;
     }
 
     @Override public void computeScroll() {
@@ -1543,7 +1608,12 @@ final class LauncherSurface extends View {
         float midpoint = getWidth() * 0.5f;
 
         if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-            if (uiConfig.showBattery && x >= midpoint) {
+            if (uiConfig.showWeather && uiConfig.showBattery) {
+                if (x >= midpoint) host.onBatteryTapped();
+                else host.onWeatherTapped();
+                return true;
+            }
+            if (uiConfig.showBattery) {
                 host.onBatteryTapped();
                 return true;
             }
@@ -1593,24 +1663,26 @@ final class LauncherSurface extends View {
                 host.onHomeMaxChanged(next);
                 break;
             case 1: host.onSettingAction(ACTION_HOME_POSITION); break;
-            case 2: host.onSettingAction(ACTION_HOME_DENSITY); break;
-            case 3: host.onSettingAction(ACTION_HOME_TEXT); break;
-            case 4: host.onSettingAction(ACTION_TOGGLE_TIME); break;
-            case 5: host.onSettingAction(ACTION_TOGGLE_DATE); break;
-            case 6: host.onSettingAction(ACTION_TOGGLE_WEATHER); break;
-            case 7: host.onSettingAction(ACTION_TOGGLE_BATTERY); break;
-            case 8: host.onSettingAction(ACTION_STATUS_LAYOUT); break;
-            case 9: host.onSettingAction(ACTION_CLOCK_FORMAT); break;
-            case 10: host.onSettingAction(ACTION_DATE_STYLE); break;
-            case 11: host.onSettingAction(ACTION_WEATHER_MODE); break;
-            case 12: host.onSettingAction(ACTION_BATTERY_MODE); break;
-            case 13: host.onQuickAppPickerRequested(); break;
-            case 14: host.onSettingAction(ACTION_ANIMATION); break;
-            case 15: host.onSettingAction(ACTION_HAPTICS); break;
-            case 16: host.onSettingAction(ACTION_HIDDEN_APPS); break;
-            case 17: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
-            case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
-            case 19: host.onSettingAction(ACTION_HELP); break;
+            case 2: host.onSettingAction(ACTION_HOME_ALIGNMENT); break;
+            case 3: host.onSettingAction(ACTION_HOME_DENSITY); break;
+            case 4: host.onSettingAction(ACTION_HOME_TEXT); break;
+            case 5: host.onSettingAction(ACTION_TOGGLE_TIME); break;
+            case 6: host.onSettingAction(ACTION_TOGGLE_DATE); break;
+            case 7: host.onSettingAction(ACTION_TOGGLE_WEATHER); break;
+            case 8: host.onSettingAction(ACTION_TOGGLE_BATTERY); break;
+            case 9: host.onSettingAction(ACTION_STATUS_LAYOUT); break;
+            case 10: host.onSettingAction(ACTION_CLOCK_FORMAT); break;
+            case 11: host.onSettingAction(ACTION_DATE_STYLE); break;
+            case 12: host.onSettingAction(ACTION_WEATHER_MODE); break;
+            case 13: host.onSettingAction(ACTION_BATTERY_MODE); break;
+            case 14: host.onQuickAppPickerRequested(); break;
+            case 15: host.onSettingAction(ACTION_ANIMATION); break;
+            case 16: host.onSettingAction(ACTION_HAPTICS); break;
+            case 17: host.onSettingAction(ACTION_APPS_TEXT); break;
+            case 18: host.onSettingAction(ACTION_HIDDEN_APPS); break;
+            case 19: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
+            case 20: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            case 21: host.onSettingAction(ACTION_HELP); break;
             default: break;
         }
     }
@@ -1665,7 +1737,7 @@ final class LauncherSurface extends View {
 
     private int homeIndexAt(float x, float y) {
         float start = homeListStartPx;
-        float row = rowHeightPx;
+        float row = homeRowHeightPx;
         int visible = visibleHomeRowsCache;
 
         if (x < leftPx || x > rightPx) return -1;
@@ -1824,7 +1896,10 @@ final class LauncherSurface extends View {
     private int accessibilityStatusIdAt(float x, float y) {
         float midpoint = getWidth() * 0.5f;
         if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-            if (uiConfig.showBattery && x >= midpoint) return A11Y_BATTERY;
+            if (uiConfig.showWeather && uiConfig.showBattery) {
+                return x >= midpoint ? A11Y_BATTERY : A11Y_WEATHER;
+            }
+            if (uiConfig.showBattery) return A11Y_BATTERY;
             if (uiConfig.showWeather) return A11Y_WEATHER;
         }
 
@@ -1945,12 +2020,12 @@ final class LauncherSurface extends View {
             if (page != PAGE_HOME) return false;
             int index = virtualId - A11Y_HOME_BASE;
             if (homeAccessibilityLabel(index) == null) return false;
-            float top = homeListStartPx + index * rowHeightPx;
+            float top = homeListStartPx + index * homeRowHeightPx;
             out.set(
                     Math.round(leftPx),
                     Math.round(top),
                     Math.round(rightPx),
-                    Math.round(top + rowHeightPx)
+                    Math.round(top + homeRowHeightPx)
             );
             return true;
         }
@@ -2000,7 +2075,7 @@ final class LauncherSurface extends View {
             out.set(
                     Math.round(leftPx),
                     Math.round(weatherTapTopPx),
-                    Math.round(midpoint),
+                    Math.round(uiConfig.showBattery ? midpoint : rightPx),
                     Math.round(weatherTapBottomPx)
             );
             return true;
@@ -2008,7 +2083,7 @@ final class LauncherSurface extends View {
         if (virtualId == A11Y_BATTERY) {
             if (!uiConfig.showBattery) return false;
             out.set(
-                    Math.round(midpoint),
+                    Math.round(uiConfig.showWeather ? midpoint : leftPx),
                     Math.round(weatherTapTopPx),
                     Math.round(rightPx),
                     Math.round(weatherTapBottomPx)
