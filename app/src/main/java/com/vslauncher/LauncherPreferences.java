@@ -21,6 +21,8 @@ import java.util.Set;
  */
 final class LauncherPreferences {
     static final String HOME_SLOT_PREFIX = "home_slot_";
+    private static final String HOME_SHORTCUT_ID_PREFIX = "home_shortcut_id_";
+    private static final String HOME_SHORTCUT_LABEL_PREFIX = "home_shortcut_label_";
     static final int MIN_HOME_APPS = 1;
     static final int MAX_HOME_APPS = 8;
 
@@ -103,15 +105,43 @@ final class LauncherPreferences {
         return prefs.contains(HOME_SLOT_PREFIX + index);
     }
 
+    String homeShortcutId(int index) {
+        if (index < 0 || index >= MAX_HOME_APPS) return null;
+        String value = prefs.getString(HOME_SHORTCUT_ID_PREFIX + index, null);
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    String homeShortcutLabel(int index) {
+        if (index < 0 || index >= MAX_HOME_APPS) return null;
+        String value = prefs.getString(HOME_SHORTCUT_LABEL_PREFIX + index, null);
+        return value == null || value.isEmpty() ? null : value;
+    }
+
     void setHomeSlot(int index, String component) {
         SharedPreferences.Editor edit = prefs.edit();
         if (component == null) edit.remove(HOME_SLOT_PREFIX + index);
         else edit.putString(HOME_SLOT_PREFIX + index, component);
+        edit.remove(HOME_SHORTCUT_ID_PREFIX + index);
+        edit.remove(HOME_SHORTCUT_LABEL_PREFIX + index);
+        edit.apply();
+    }
+
+    void setHomeShortcut(int index, String component, String shortcutId, String label) {
+        if (index < 0 || index >= MAX_HOME_APPS) return;
+        SharedPreferences.Editor edit = prefs.edit();
+        if (component == null || component.isEmpty()) edit.remove(HOME_SLOT_PREFIX + index);
+        else edit.putString(HOME_SLOT_PREFIX + index, component);
+        putNullable(edit, HOME_SHORTCUT_ID_PREFIX + index, shortcutId);
+        putNullable(edit, HOME_SHORTCUT_LABEL_PREFIX + index, label);
         edit.apply();
     }
 
     void clearHomeSlot(int index) {
-        prefs.edit().putString(HOME_SLOT_PREFIX + index, "").apply();
+        prefs.edit()
+                .putString(HOME_SLOT_PREFIX + index, "")
+                .remove(HOME_SHORTCUT_ID_PREFIX + index)
+                .remove(HOME_SHORTCUT_LABEL_PREFIX + index)
+                .apply();
     }
 
     void swapHomeSlots(int first, int second) {
@@ -123,6 +153,10 @@ final class LauncherPreferences {
 
         String firstValue = homeSlot(first);
         String secondValue = homeSlot(second);
+        String firstShortcutId = homeShortcutId(first);
+        String secondShortcutId = homeShortcutId(second);
+        String firstShortcutLabel = homeShortcutLabel(first);
+        String secondShortcutLabel = homeShortcutLabel(second);
         boolean firstExists = hasHomeSlot(first);
         boolean secondExists = hasHomeSlot(second);
 
@@ -131,6 +165,10 @@ final class LauncherPreferences {
         else edit.remove(HOME_SLOT_PREFIX + first);
         if (firstExists) edit.putString(HOME_SLOT_PREFIX + second, firstValue);
         else edit.remove(HOME_SLOT_PREFIX + second);
+        putNullable(edit, HOME_SHORTCUT_ID_PREFIX + first, secondShortcutId);
+        putNullable(edit, HOME_SHORTCUT_ID_PREFIX + second, firstShortcutId);
+        putNullable(edit, HOME_SHORTCUT_LABEL_PREFIX + first, secondShortcutLabel);
+        putNullable(edit, HOME_SHORTCUT_LABEL_PREFIX + second, firstShortcutLabel);
         edit.apply();
     }
 
@@ -339,6 +377,15 @@ final class LauncherPreferences {
         }
         root.put("homeSlots", slots);
 
+        JSONArray shortcutIds = new JSONArray();
+        JSONArray shortcutLabels = new JSONArray();
+        for (int i = 0; i < MAX_HOME_APPS; i++) {
+            shortcutIds.put(JSONObject.wrap(homeShortcutId(i)));
+            shortcutLabels.put(JSONObject.wrap(homeShortcutLabel(i)));
+        }
+        root.put("homeShortcutIds", shortcutIds);
+        root.put("homeShortcutLabels", shortcutLabels);
+
         JSONObject aliasJson = new JSONObject();
         for (Map.Entry<String, String> entry : aliases().entrySet()) {
             aliasJson.put(entry.getKey(), entry.getValue());
@@ -392,6 +439,29 @@ final class LauncherPreferences {
         if (slots != null) {
             for (int i = 0; i < Math.min(slots.length(), MAX_HOME_APPS); i++) {
                 if (!slots.isNull(i)) putNullable(edit, HOME_SLOT_PREFIX + i, slots.optString(i, null));
+            }
+        }
+
+        JSONArray shortcutIds = root.optJSONArray("homeShortcutIds");
+        JSONArray shortcutLabels = root.optJSONArray("homeShortcutLabels");
+        if (shortcutIds != null) {
+            for (int i = 0; i < Math.min(shortcutIds.length(), MAX_HOME_APPS); i++) {
+                if (!shortcutIds.isNull(i)) {
+                    putNullable(
+                            edit,
+                            HOME_SHORTCUT_ID_PREFIX + i,
+                            shortcutIds.optString(i, null)
+                    );
+                }
+                if (shortcutLabels != null
+                        && i < shortcutLabels.length()
+                        && !shortcutLabels.isNull(i)) {
+                    putNullable(
+                            edit,
+                            HOME_SHORTCUT_LABEL_PREFIX + i,
+                            shortcutLabels.optString(i, null)
+                    );
+                }
             }
         }
 
