@@ -36,7 +36,11 @@ Do not change XOS freezer settings during this workflow.
 3. Record the exact tested commit.
 4. Run the normal build/lint once.
 5. Confirm the connected device is still the expected Infinix X6855 / API 36.
-6. Do not uninstall `com.vslauncher`.
+6. Record the current HOME role holder.
+7. If VS Launcher is the current HOME app, temporarily select the stock XOS
+   launcher as default Home before capture/measurement. Do not bypass the
+   scripts' HOME-role safety check.
+8. Do not uninstall `com.vslauncher`.
 
 ## Phase 2 — collect a manual Baseline Profile candidate
 
@@ -130,14 +134,21 @@ Evaluate:
 
 Do not decide based on min/best sample.
 
-If results are noisy or marginal, run a second full A/B session with:
+If the first result is good enough to consider KEEP, perform a reversed-order
+replication before committing:
+
 ~~~sh
-ITERATIONS=30 STATE_SETTLE_SECONDS=3 \
+bash scripts/infinix-manual-ab.sh unstage <FIRST_AB_SESSION>
+
+ORDER=BA ITERATIONS=20 STATE_SETTLE_SECONDS=2 \
   bash scripts/infinix-manual-ab.sh all <CAPTURED_PROFILE>
 ~~~
 
+If results are noisy or marginal, increase the replication to 30 samples with a
+3-second state-settling delay.
+
 Only accept a candidate when the direction is repeatable across the available
-evidence.
+AB and BA evidence.
 
 ## Phase 5 — launcher smoke validation
 
@@ -163,6 +174,8 @@ bash scripts/infinix-manual-profile.sh restore
 ~~~
 
 Do not leave any freezer/global XOS settings changed.
+
+Restore VS Launcher as the default Home app and verify it resumes normally.
 
 If the candidate is rejected:
 
@@ -206,6 +219,8 @@ Include:
 - A dexopt state evidence
 - B `status=speed-profile` evidence
 - same-APK proof
+- first-session order (AB or BA)
+- reversed-order replication result when a KEEP decision is considered
 - smoke-test result
 - ProfileInstaller skip-file cleanup result
 - limitations: manual A/B, not Macrobenchmark
