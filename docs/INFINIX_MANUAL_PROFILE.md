@@ -137,7 +137,7 @@ cold app process
 → Home
 → Settings
 → Home
-→ focused search
+→ swipe-left focused Apps search
 → enter "cal"
 ```
 
