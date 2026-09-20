@@ -622,16 +622,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                filteredApps = AppRepository.filter(
+                normalizedQuery = SearchNormalization.normalize(query);
+                filteredApps = AppRepository.filterNormalized(
                         apps,
-                        query,
+                        normalizedQuery,
                         normalizedAliases,
                         aliasInitials
                 );
                 searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
                 surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
-                scheduleSingleResultLaunch(query, searchResults);
+                scheduleSingleResultLaunch(normalizedQuery, searchResults);
             }
 
             @Override public void afterTextChanged(Editable s) {
