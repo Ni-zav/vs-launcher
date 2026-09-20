@@ -520,24 +520,24 @@ final class LauncherSurface extends View {
             homeListStartPx = defaultHomeStart;
         }
 
-        float homeAvailable = homeEnd - homeListStartPx;
-        int fit = rowHeightPx <= 0f ? 0 : Math.max(0, (int) Math.floor(homeAvailable / rowHeightPx));
-        visibleHomeRowsCache = Math.min(maxHomeApps, fit);
+        visibleHomeRowsCache = LauncherLayout.visibleRows(
+                maxHomeApps,
+                rowHeightPx,
+                homeListStartPx,
+                homeEnd
+        );
     }
 
     private void recalculateSettingsGeometry() {
-        float y = settingsViewportTopPx;
-        int section = 0;
-        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            if (section < SETTINGS_SECTION_COUNT
-                    && index == SETTINGS_SECTION_STARTS[section]) {
-                settingsSectionBaselines[section] = y + sp(DesignTokens.LABEL_SP);
-                y += settingsSectionHeaderHeightPx;
-                section++;
-            }
-            settingsRowTops[index] = y;
-            y += rowHeightPx;
-        }
+        LauncherLayout.fillSectionedRows(
+                settingsRowTops,
+                settingsSectionBaselines,
+                settingsViewportTopPx,
+                rowHeightPx,
+                settingsSectionHeaderHeightPx,
+                sp(DesignTokens.LABEL_SP),
+                SETTINGS_SECTION_STARTS
+        );
     }
 
     private float contentTop() {
@@ -711,8 +711,8 @@ final class LauncherSurface extends View {
             float clipBottom
     ) {
         float row = rowHeightPx;
-        int first = Math.max(0, (int) Math.floor((clipTop - startY) / row));
-        int last = Math.min(count, (int) Math.ceil((clipBottom - startY) / row) + 1);
+        int first = LauncherLayout.firstVisibleIndex(clipTop, startY, row, count);
+        int last = LauncherLayout.lastVisibleExclusive(clipBottom, startY, row, count);
         if (last <= first) return;
 
         int save = canvas.save();
@@ -1171,8 +1171,7 @@ final class LauncherSurface extends View {
         if (y < appsViewportTopPx || y >= appsViewportBottomPx || rowHeightPx <= 0f) return -1;
 
         float start = appsViewportTopPx - appScroll;
-        int index = (int) ((y - start) / rowHeightPx);
-        return index >= 0 && index < filteredApps.size() ? index : -1;
+        return LauncherLayout.rowIndexAt(y, start, rowHeightPx, filteredApps.size());
     }
 
     private int homeIndexAt(float x, float y) {
@@ -1183,8 +1182,7 @@ final class LauncherSurface extends View {
         if (x < leftPx || x > rightPx) return -1;
         if (y < start || y >= start + visible * row) return -1;
 
-        int index = (int) ((y - start) / row);
-        return index >= 0 && index < visible ? index : -1;
+        return LauncherLayout.rowIndexAt(y, start, row, visible);
     }
 
     private float homeListStart() {
@@ -1205,8 +1203,7 @@ final class LauncherSurface extends View {
 
     private float maxAppScroll() {
         float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
-        float content = filteredApps.size() * rowHeightPx;
-        return Math.max(0f, content - viewport);
+        return LauncherLayout.maxScroll(filteredApps.size(), rowHeightPx, viewport);
     }
 
     private float maxSettingsScroll() {
