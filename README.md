@@ -86,6 +86,8 @@ There are no alpha-gray hierarchy tokens, gradients, blur, shadows, wallpapers, 
 - dividers only where structure benefits from them
 - placement
 
+The full interaction/privacy rationale is documented in **[docs/FRICTIONLESS_FEATURES.md](docs/FRICTIONLESS_FEATURES.md)**.
+
 The launcher uses Android system fonts only:
 
 | Role | Typeface | Default size |
