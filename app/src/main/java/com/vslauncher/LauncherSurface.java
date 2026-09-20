@@ -83,18 +83,20 @@ final class LauncherSurface extends View {
     private final Paint labelPaint =
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint alphabetPaint =
-            textPaint(9f, DesignTokens.TEXT_PRIMARY, DesignTokens.LABEL);
+            textPaint(9f, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint appPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
+    private final Paint appPrimaryPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
-    private final Paint appInversePaint =
-            textPaint(DesignTokens.APP_SP, DesignTokens.BLACK, DesignTokens.BODY);
-    private final Paint metaInversePaint =
-            textPaint(DesignTokens.META_SP, DesignTokens.BLACK, DesignTokens.BODY);
+    private final Paint appPressedPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
+    private final Paint metaPressedPaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
-    private final Paint primaryFillPaint = fillPaint(DesignTokens.TEXT_PRIMARY);
+    private final Paint statusFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
     private final Paint batteryStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
@@ -301,7 +303,8 @@ final class LauncherSurface extends View {
     void setUiConfig(LauncherUiConfig config) {
         uiConfig = config == null ? LauncherUiConfig.defaults() : config;
         appPaint.setTextSize(sp(uiConfig.appTextSp()));
-        appInversePaint.setTextSize(sp(uiConfig.appTextSp()));
+        appPrimaryPaint.setTextSize(sp(uiConfig.appTextSp()));
+        appPressedPaint.setTextSize(sp(uiConfig.appTextSp()));
         recalculateGeometry();
         refreshSettingsValueCache();
         invalidate();
@@ -670,7 +673,7 @@ final class LauncherSurface extends View {
             float weatherCenterX = x + weatherDotXOffsetPx;
             float weatherCenterY = statusBaseline - weatherDotYOffsetPx;
             canvas.drawCircle(weatherCenterX, weatherCenterY, weatherOuterRadiusPx, statusStrokePaint);
-            canvas.drawCircle(weatherCenterX, weatherCenterY, weatherInnerRadiusPx, primaryFillPaint);
+            canvas.drawCircle(weatherCenterX, weatherCenterY, weatherInnerRadiusPx, statusFillPaint);
             canvas.drawText(weatherText, x + weatherTextOffsetPx, statusBaseline, metaPaint);
         }
 
@@ -706,12 +709,8 @@ final class LauncherSurface extends View {
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
             boolean pressed = index == pressedHomeIndex;
 
-            if (pressed) {
-                canvas.drawRect(x, rowTop, right, rowTop + rowHeight, primaryFillPaint);
-            }
-
-            Paint rowPaint = pressed ? appInversePaint : appPaint;
-            Paint hintPaint = pressed ? metaInversePaint : metaPaint;
+            Paint rowPaint = pressed ? appPressedPaint : appPaint;
+            Paint hintPaint = pressed ? metaPressedPaint : labelPaint;
 
             String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
             if (app != null) {
@@ -736,7 +735,7 @@ final class LauncherSurface extends View {
                 x + batteryWidthPx + batteryTerminalGapPx + batteryTerminalWidthPx,
                 y + batteryHeightPx - batteryTerminalInsetPx
         );
-        canvas.drawRoundRect(rect, dividerThicknessPx, dividerThicknessPx, primaryFillPaint);
+        canvas.drawRoundRect(rect, dividerThicknessPx, dividerThicknessPx, statusFillPaint);
 
         if (batteryLevel >= 0) {
             float innerWidth = batteryWidthPx - batteryInnerInsetPx * 2f;
@@ -752,7 +751,7 @@ final class LauncherSurface extends View {
                         rect,
                         batteryInnerRadiusPx,
                         batteryInnerRadiusPx,
-                        primaryFillPaint
+                        statusFillPaint
                 );
             }
         }
@@ -855,15 +854,15 @@ final class LauncherSurface extends View {
         for (int i = first; i < last; i++) {
             float rowTop = startY + i * row;
             boolean pressed = i == pressedAppIndex;
+            Paint rowPaint;
             if (pressed) {
-                canvas.drawRect(x, rowTop, right, rowTop + row, primaryFillPaint);
+                rowPaint = appPressedPaint;
+            } else if (searchActive && i == 0) {
+                rowPaint = appPrimaryPaint;
+            } else {
+                rowPaint = appPaint;
             }
-            canvas.drawText(
-                    source.get(i).label,
-                    x,
-                    rowTop + baselineOffset,
-                    pressed ? appInversePaint : appPaint
-            );
+            canvas.drawText(source.get(i).label, x, rowTop + baselineOffset, rowPaint);
         }
         canvas.restoreToCount(save);
     }
@@ -890,30 +889,26 @@ final class LauncherSurface extends View {
             AppListItem item = browseItems.get(i);
             boolean pressed = i == pressedAppIndex;
 
-            if (pressed) {
-                canvas.drawRect(x, rowTop, right, rowTop + rowHeightPx, primaryFillPaint);
-            }
-
             if (item.isApp()) {
                 canvas.drawText(
                         item.app.label,
                         x,
                         rowTop + baselineOffset,
-                        pressed ? appInversePaint : appPaint
+                        pressed ? appPressedPaint : appPaint
                 );
             } else {
                 canvas.drawText(
                         item.label,
                         x,
                         rowTop + baselineOffset,
-                        pressed ? metaInversePaint : labelPaint
+                        pressed ? metaPressedPaint : labelPaint
                 );
                 if (!item.value.isEmpty()) {
                     canvas.drawText(
                             item.value,
                             right - browseValueWidths[i],
                             rowTop + baselineOffset,
-                            pressed ? metaInversePaint : metaPaint
+                            pressed ? metaPressedPaint : metaPaint
                     );
                 }
             }
@@ -960,29 +955,23 @@ final class LauncherSurface extends View {
         String value = settingsValues[index];
         boolean pressed = index == pressedSettingsIndex;
 
-        if (pressed) {
-            canvas.drawRect(x, y, right, y + rowHeightPx, primaryFillPaint);
-        }
-
-        canvas.drawText(label, x, baseline, pressed ? appInversePaint : appPaint);
+        canvas.drawText(label, x, baseline, pressed ? appPressedPaint : appPaint);
         if (value != null && !value.isEmpty()) {
             canvas.drawText(
                     value,
                     right - settingsValueWidths[index],
                     baseline,
-                    pressed ? metaInversePaint : metaPaint
+                    pressed ? metaPressedPaint : metaPaint
             );
         }
 
-        if (!pressed) {
-            canvas.drawRect(
-                    x,
-                    y + rowHeightPx - dividerThicknessPx,
-                    right,
-                    y + rowHeightPx,
-                    dividerPaint
-            );
-        }
+        canvas.drawRect(
+                x,
+                y + rowHeightPx - dividerThicknessPx,
+                right,
+                y + rowHeightPx,
+                dividerPaint
+        );
     }
 
     private String settingsLabel(int index) {
