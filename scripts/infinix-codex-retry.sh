@@ -55,7 +55,7 @@ preflight() {
   mkdir -p "$result_dir"
 
   record_device "$result_dir/device.txt"
-  adb_run devices -l > "$result_dir/adb-devices.txt"
+  adb devices -l > "$result_dir/adb-devices.txt"
   adb_run shell dumpsys activity instrumentation > "$result_dir/instrumentation.txt" 2>&1 || true
   adb_run shell dumpsys activity     | grep -A 50 "CachedAppOptimizer settings"     > "$result_dir/cached-app-optimizer.txt" || true
 
