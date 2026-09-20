@@ -31,7 +31,7 @@ public final class SearchAutoLaunchPolicyTest {
 
     @Test public void formingCalculatorIntentBlocksBeforeExpressionIsComplete() {
         assertEquals(
-                SearchAutoLaunchPolicy.FIRST_SINGLETON_DELAY_MS,
+                SearchAutoLaunchPolicy.NUMERIC_SINGLETON_DELAY_MS,
                 delay("1", "1", "1 1 1 1", "", "1", "", false, false)
         );
         assertEquals(
@@ -45,6 +45,15 @@ public final class SearchAutoLaunchPolicyTest {
         assertTrue(SearchAutoLaunchPolicy.isFormingCompetingIntent("timer 1", "timer 1"));
         assertTrue(SearchAutoLaunchPolicy.isFormingCompetingIntent("alarm 0", "alarm 0"));
         assertTrue(SearchAutoLaunchPolicy.isFormingCompetingIntent("example.", "example"));
+    }
+
+    @Test public void imeCompositionGuardOnlyAppliesToCompositionSensitiveLanguages() {
+        assertFalse(SearchAutoLaunchPolicy.shouldBlockImeComposition(true, "en-US"));
+        assertFalse(SearchAutoLaunchPolicy.shouldBlockImeComposition(true, ""));
+        assertTrue(SearchAutoLaunchPolicy.shouldBlockImeComposition(true, "zh-CN"));
+        assertTrue(SearchAutoLaunchPolicy.shouldBlockImeComposition(true, "ja-JP"));
+        assertTrue(SearchAutoLaunchPolicy.shouldBlockImeComposition(true, "ko-KR"));
+        assertFalse(SearchAutoLaunchPolicy.shouldBlockImeComposition(false, "ja-JP"));
     }
 
     @Test public void imeCompositionAndLeadingSpaceAreSafeEscapes() {

@@ -12,6 +12,7 @@ final class SearchAutoLaunchPolicy {
     static final long FIRST_SINGLETON_DELAY_MS = 650L;
     static final long STABLE_SINGLETON_DELAY_MS = 400L;
     static final long EXACT_MATCH_DELAY_MS = 180L;
+    static final long NUMERIC_SINGLETON_DELAY_MS = 1800L;
 
     private SearchAutoLaunchPolicy() {}
 
@@ -44,6 +45,11 @@ final class SearchAutoLaunchPolicy {
         if (isGeneralText(normalizedQuery) && rank > SearchRanking.ALIAS_PREFIX) {
             return BLOCKED;
         }
+
+        // Numeric-only text needs a longer grace period because common Android
+        // keyboards expose operators such as '+' through a long-press popup.
+        // Once an operator arrives, competing-intent detection blocks immediately.
+        if (isDigitsOnly(rawQuery)) return NUMERIC_SINGLETON_DELAY_MS;
 
         if (normalizedQuery.equals(safe(normalizedLabel))
                 || normalizedQuery.equals(safe(normalizedAlias))) {
@@ -93,8 +99,23 @@ final class SearchAutoLaunchPolicy {
                 || normalizedQuery.startsWith("set alarm ");
     }
 
+    static boolean shouldBlockImeComposition(boolean composing, String languageTag) {
+        if (!composing || languageTag == null || languageTag.isEmpty()) return false;
+        return languageTag.regionMatches(true, 0, "zh", 0, 2)
+                || languageTag.regionMatches(true, 0, "ja", 0, 2)
+                || languageTag.regionMatches(true, 0, "ko", 0, 2);
+    }
+
     private static boolean isGeneralText(String normalizedQuery) {
         return normalizedQuery != null && normalizedQuery.indexOf(' ') >= 0;
+    }
+
+    private static boolean isDigitsOnly(String rawQuery) {
+        if (rawQuery == null || rawQuery.isEmpty()) return false;
+        for (int i = 0; i < rawQuery.length(); i++) {
+            if (!Character.isDigit(rawQuery.charAt(i))) return false;
+        }
+        return true;
     }
 
     private static boolean hasLeadingWhitespace(String rawQuery) {
