@@ -417,3 +417,107 @@ The next research batch should focus only on:
 2. whether the global AOSP `use_freezer=false` diagnostic is acceptable for a
    controlled benchmark session when all package-scoped remedies fail
 3. how that global change affects measurement validity and rollback
+
+
+---
+
+## Batch 4 — Infinix / XOS evidence
+
+### 1. No official package-level XOS freezer control was found
+
+A bounded search of current Infinix/XOS material did not surface an official
+developer-facing control for:
+
+- exempting one package from the kernel cgroup freezer
+- exempting an instrumentation controller
+- disabling an XOS freezer only for one package
+- configuring Macrobenchmark/instrumentation process importance
+
+Official Infinix XOS 16 product pages describe the OS and battery/platform
+features at a product level, but do not document a supported ADB/API equivalent
+to an ActivityManager package-specific freezer exemption.
+
+Example official source:
+
+- https://mx.pre.infinixmobility.com/note-60-pro
+
+This is an **absence-of-documentation finding**, not proof that no hidden vendor
+control exists.
+
+Do not invent XOS shell settings or copy opaque vendor settings from unrelated
+models into the automated benchmark workflow.
+
+### 2. Community XOS 16 reports are consistent with unusually aggressive background management
+
+Recent XOS 16 users report cases such as:
+
+- apps being terminated despite being retained in Recents
+- background activity continuing to fail after battery optimization changes
+- auto-start/background apps behaving inconsistently
+- battery optimization appearing to revert on some devices
+
+Examples:
+
+- https://www.reddit.com/r/InfinixSmartphones/comments/1urlh6k/apps_get_killed_everytime_even_when_in_recentsxos/
+- https://www.reddit.com/r/InfinixSmartphones/comments/1uqh6od/infinix_gt_30_5g_delay_notification_issues_and/
+
+These reports are **anecdotal**:
+
+- they are different Infinix models
+- they do not demonstrate the same cgroup path
+- they do not establish an Android 16 framework defect
+- they do not prove the X6855 Macrobenchmark freeze is caused by the same policy
+
+They do, however, make an OEM/XOS-specific background-management interaction
+plausible enough to keep investigating.
+
+### 3. User-tested XOS/package remedies are already stronger evidence than generic advice
+
+On the affected X6855, the following have already failed to produce a stable
+Macrobenchmark controller:
+
+- XOS Unrestricted battery use
+- DeviceIdle whitelist
+- `RUN_ANY_IN_BACKGROUND` allowance
+- clearing inactive state
+- `am unfreeze --sticky`
+- temporary foreground-service delegation
+- temporarily disabling XOS's global `background_power_saving_enable`
+
+Therefore generic advice such as "set battery to unrestricted", "lock the app in
+Recents", or "enable auto-start" should **not** be repeated as the recommended
+solution unless a newly identified XOS control is materially different.
+
+### 4. Current root-cause classification
+
+Evidence currently supports this classification:
+
+| Hypothesis | Current support |
+| --- | --- |
+| Normal AOSP cached-app freezer behavior | Weak as a full explanation: active instrumentation normally receives foreground importance |
+| AndroidX Benchmark library defect with documented Android 16 fix | No matching documented issue/fix found in current 1.5.0 material |
+| Android 16 framework regression | Plausible, not established |
+| Infinix/XOS policy conflict or vendor override | Plausible; community reports are directionally consistent but anecdotal |
+| Simple app battery-optimization misconfiguration | Low, because multiple package-level/background remedies were already tested |
+
+### Batch 4 conclusion
+
+There is currently no verified XOS package-scoped switch that is safer and more
+specific than the already-tested remedies.
+
+The next batch should therefore evaluate the AOSP-documented device-wide
+diagnostic:
+
+```sh
+device_config put activity_manager_native_boot use_freezer false
+```
+
+with emphasis on:
+
+1. exact original-value capture and rollback
+2. reboot requirements
+3. whether the setting is acceptable on a personal production/user build for a
+   short controlled test session
+4. whether disabling the freezer invalidates Baseline Profile generation
+5. whether startup A/B remains defensible when both arms use the identical
+   freezer-disabled environment
