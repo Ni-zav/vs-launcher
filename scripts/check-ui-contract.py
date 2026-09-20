@@ -64,6 +64,19 @@ for method in hot_methods:
         if forbidden in body:
             errors.append(f"{method} contains draw-time forbidden token: {forbidden}")
 
+for method in hot_methods:
+    body = method_body(surface, method)
+    for accessibility_token in (
+        "AccessibilityNodeInfo",
+        "AccessibilityEvent",
+        "accessibilityManager",
+        "accessibilityProvider",
+    ):
+        if accessibility_token in body:
+            errors.append(
+                f"{method} must not perform accessibility work from the draw hot path"
+            )
+
 settings_row = method_body(surface, "drawSettingsRow")
 if "dividerPaint" in settings_row:
     errors.append("Settings rows must stay dividerless; sections are grouped by whitespace")
