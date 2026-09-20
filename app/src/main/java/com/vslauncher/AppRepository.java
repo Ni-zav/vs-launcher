@@ -1,5 +1,6 @@
 package com.vslauncher;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
@@ -183,7 +184,7 @@ final class AppRepository {
         try {
             launcherApps.startMainActivity(app.component, app.user, null, null);
             return true;
-        } catch (IllegalStateException | SecurityException error) {
+        } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
             return false;
         }
     }
@@ -193,7 +194,7 @@ final class AppRepository {
         try {
             launcherApps.startAppDetailsActivity(app.component, app.user, null, null);
             return true;
-        } catch (IllegalStateException | SecurityException error) {
+        } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
             return false;
         }
     }
@@ -243,7 +244,7 @@ final class AppRepository {
                     app.user
             );
             return true;
-        } catch (IllegalStateException | SecurityException error) {
+        } catch (ActivityNotFoundException | IllegalStateException | SecurityException error) {
             return false;
         }
     }
