@@ -300,8 +300,21 @@ final class AppRepository {
             Map<String, String> normalizedAliases,
             Map<String, String> aliasInitials
     ) {
-        String normalized = SearchNormalization.normalize(query);
-        if (normalized.isEmpty()) return source;
+        return filterNormalized(
+                source,
+                SearchNormalization.normalize(query),
+                normalizedAliases,
+                aliasInitials
+        );
+    }
+
+    static List<AppEntry> filterNormalized(
+            List<AppEntry> source,
+            String normalized,
+            Map<String, String> normalizedAliases,
+            Map<String, String> aliasInitials
+    ) {
+        if (normalized == null || normalized.isEmpty()) return source;
 
         @SuppressWarnings("unchecked")
         ArrayList<AppEntry>[] buckets = new ArrayList[8];

@@ -196,4 +196,33 @@ public final class LauncherMacrobenchmark {
                 }
         );
     }
+
+    @Test
+    public void utilitySearchFrames() {
+        benchmarkRule.measureRepeated(
+                PACKAGE,
+                Arrays.asList(new FrameTimingMetric()),
+                CompilationMode.DEFAULT,
+                null,
+                ITERATIONS,
+                scope -> {
+                    launch(scope);
+                    swipeLeft();
+                    return Unit.INSTANCE;
+                },
+                scope -> {
+                    UiObject2 search = device().findObject(By.desc("Search all apps"));
+                    if (search == null) {
+                        throw new IllegalStateException("Search field was not found");
+                    }
+                    search.clear();
+                    search.setText("timer 10m");
+                    device().waitForIdle();
+                    search.clear();
+                    search.setText("23*17");
+                    device().waitForIdle();
+                    return Unit.INSTANCE;
+                }
+        );
+    }
 }

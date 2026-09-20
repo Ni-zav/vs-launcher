@@ -1,6 +1,6 @@
 # VS Launcher
 
-VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.7 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent commands, no continuous render loop, and no production UI framework.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.8 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent utilities, lazy virtual accessibility nodes, no continuous render loop, and no production UI framework.
 
 ## Interaction
 
@@ -11,8 +11,9 @@ VS Launcher is a native, text-first Android home screen written in Java with pla
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
 - **Swipe down** from Home → intentionally unused.
-- **Type until one app remains** → the stable singleton app auto-launches after a short debounce even if quiet command rows also exist.
+- **Type until one app remains** → the stable singleton app auto-launches after a short debounce when only quiet SYSTEM rows accompany it; explicit timer/alarm/calc/dial/URL/web/help intent suppresses app auto-launch.
 - **Keyboard Go/Enter** → launches the first ranked result immediately.
+- **Utility queries** → `timer 10m`, `alarm 07:30`, `23*17`, system commands, direct dial/URL actions, and explicit web fallback stay inside the same search surface.
 - **Tap + ADD APP** → open the Home app picker directly.
 - **Long-press a Home row** → change, rename, move, or clear that slot.
 - **Long-press an app** → native app shortcuts (when exposed), optional Pin shortcut…, Add to Home, Hide, App info, and personal-profile Uninstall.
@@ -49,6 +50,7 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 - Long-press haptics: On / Off.
 - Hidden-app manager.
 - JSON configuration export/import through Android's document picker. No storage permission, account, database, or cloud service is required.
+- Bottom `HELP → How to use` opens the compact interaction guide; typing `help` opens the same guide from search.
 
 ## Search
 
@@ -67,9 +69,9 @@ App ranking remains deterministic:
 
 Normalization is forgiving but deterministic: accents are stripped for matching and punctuation/repeated whitespace collapse to word separators. For example, `Pokémon` matches `pokemon`, and `my-app` matches `my app`.
 
-Apps remain ahead of latent non-app actions. Search may append quiet semantic rows for system actions, safe dialing, or opening a URL. Those rows never auto-launch; tap or keyboard Go/Enter is required. A single app can still auto-launch even if one or more command rows are also shown.
+Apps remain ahead of latent non-app actions. Search may append quiet semantic rows for system actions, safe dialing, opening a URL, timer/alarm creation, local arithmetic, help, or an explicit web fallback. Those rows never auto-launch; tap or keyboard Go/Enter is required. A lone app may still auto-launch beside passive SYSTEM rows, but explicit structured utility/help intent suppresses that app auto-launch so typed intent is never stolen.
 
-Examples of latent system queries include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `alarm`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`.
+Examples include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `timer 10m`, `alarm 07:30`, `23*17`, `example.com`, `help`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`. If no app/system/direct utility matches, search may show one deliberate `Search web` row; VS itself performs no network search.
 
 Aliases affect Home and app search ranking; Apps still shows the application's canonical label. Hidden apps are excluded from Apps/search only. Existing personal/work Home slots and quick-launch assignments can still launch a hidden app.
 
@@ -134,12 +136,15 @@ The UI thread should be almost idle while Home is not moving.
 - Frequently measured status strings are cached when their underlying state changes.
 - Saved app components cache their flattened keys and use an O(1) lookup map.
 - Search aliases are cached and normalized outside the TextWatcher hot path.
+- The typed query is normalized exactly once per edit and the normalized value is reused by app ranking, commands, alarm parsing, result emphasis, and singleton validation.
 - Search ranking is one pass over visible apps while preserving deterministic tier order.
 - Canonical and alias initials are precomputed outside typing.
 - Fuzzy fallback is bounded ordered-subsequence matching rather than quadratic edit distance.
 - A–Z + # first-row indices are cached when the browse list changes.
 - Search command definitions are static and only matched when the query is at least two normalized characters.
-- Dial/URL recognition is local and permissionless; it does not index contacts or history.
+- Dial/URL recognition, timer/alarm parsing, and calculator parsing are local and permissionless; they do not index contacts or history.
+- Search utility parsers are I/O-free and scale with query length; they do not introduce another app-list traversal.
+- Canvas accessibility uses a lazy platform `AccessibilityNodeProvider`; accessibility objects are never created from draw hot paths, and no accessibility polling/render loop exists when services are off.
 - Home shortcut IDs/labels are persisted without startup shortcut queries.
 - Undo keeps only one in-memory reversal and schedules one delayed clear callback.
 - Native app shortcuts are queried only on long-press.
@@ -203,7 +208,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.7.0-debug.apk
+dist/VS-Launcher-0.8.0-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
@@ -223,8 +228,10 @@ MainActivity
 ├── SearchRanking         pure-Java deterministic app-search tiers
 ├── SearchNormalization   accent/punctuation tolerant normalization
 ├── SearchCommand         static latent system-command catalog
-├── SearchResult          flat app/system/dial/open search rows
+├── SearchResult          flat app/system/direct-utility search rows
 ├── QueryActions          permissionless dial/URL recognition
+├── TimeQueryActions      pure-Java timer/alarm parsing
+├── CalculatorAction      bounded local arithmetic parser
 └── WeatherService        coarse location, cache, network, weather mapping
 
 macrobenchmark/           physical-device performance tests only
@@ -249,3 +256,6 @@ Future changes should preserve:
 11. new foreground colors must remain neutral grayscale semantic roles, not chromatic themes
 12. non-app search actions never participate in automatic launch
 13. reversible launcher actions prefer transient Undo over confirmation dialogs
+14. typed search normalizes once, then reuses that cached value across matching/policy logic
+15. latent utility parsers stay local/I/O-free and must not add another app-list traversal
+16. accessibility semantics stay outside `onDraw()` and add no permanent visual surface

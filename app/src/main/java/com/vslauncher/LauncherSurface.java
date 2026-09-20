@@ -4,12 +4,18 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Bundle;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityManager;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.OverScroller;
 
@@ -38,12 +44,13 @@ final class LauncherSurface extends View {
     static final int ACTION_HIDDEN_APPS = 15;
     static final int ACTION_EXPORT_CONFIG = 16;
     static final int ACTION_IMPORT_CONFIG = 17;
+    static final int ACTION_HELP = 18;
 
-    private static final int SETTINGS_ROW_COUNT = 19;
-    private static final int SETTINGS_SECTION_COUNT = 5;
-    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17};
+    private static final int SETTINGS_ROW_COUNT = 20;
+    private static final int SETTINGS_SECTION_COUNT = 6;
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17, 19};
     private static final String[] SETTINGS_SECTION_LABELS = {
-            "HOME", "STATUS", "GESTURES", "APPS", "DATA"
+            "HOME", "STATUS", "GESTURES", "APPS", "DATA", "HELP"
     };
 
     interface Host {
@@ -77,6 +84,17 @@ final class LauncherSurface extends View {
     private static final int GESTURE_HORIZONTAL = 1;
     private static final int GESTURE_VERTICAL = 2;
 
+    private static final int A11Y_NONE = Integer.MIN_VALUE;
+    private static final int A11Y_TIME = 1;
+    private static final int A11Y_DATE = 2;
+    private static final int A11Y_WEATHER = 3;
+    private static final int A11Y_BATTERY = 4;
+    private static final int A11Y_APPS_SEARCH = 5;
+    private static final int A11Y_UNDO = 6;
+    private static final int A11Y_HOME_BASE = 100;
+    private static final int A11Y_APP_BASE = 1000;
+    private static final int A11Y_SETTINGS_BASE = 2000;
+
     private final Host host;
     private final Paint datePaint =
             textPaint(DesignTokens.DATE_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.LABEL);
@@ -108,6 +126,11 @@ final class LauncherSurface extends View {
     private final Paint batteryStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    private final int[] accessibilityScreenLocation = new int[2];
+    private final AccessibilityManager accessibilityManager;
+    private LauncherAccessibilityProvider accessibilityProvider;
+    private int accessibilityHoverId = A11Y_NONE;
+    private int accessibilityFocusedId = A11Y_NONE;
     private final OverScroller scroller;
     private final int touchSlop;
     private final int minFlingVelocity;
@@ -282,6 +305,9 @@ final class LauncherSurface extends View {
         maxFlingVelocity = config.getScaledMaximumFlingVelocity();
         longPressTimeout = ViewConfiguration.getLongPressTimeout();
         scroller = new OverScroller(context);
+        accessibilityManager =
+                (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
+        setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
 
         batteryStrokePaint.setStyle(Paint.Style.STROKE);
         batteryStrokePaint.setStrokeWidth(dp(1.2f));
@@ -382,6 +408,7 @@ final class LauncherSurface extends View {
         appScroll = 0f;
         scroller.abortAnimation();
         if (page == PAGE_APPS) invalidate();
+        notifyAccessibilityContentChanged();
     }
 
     void setBrowseItems(List<AppListItem> items) {
@@ -397,6 +424,7 @@ final class LauncherSurface extends View {
         refreshAlphabetIndex();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         if (page == PAGE_APPS) invalidate();
+        notifyAccessibilityContentChanged();
     }
 
     void setFilteredApps(List<AppEntry> filtered) {
@@ -444,6 +472,7 @@ final class LauncherSurface extends View {
         refreshAlphabetIndex();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         if (page == PAGE_APPS) invalidate();
+        notifyAccessibilityContentChanged();
     }
 
     void setTransientMessage(String message, boolean showUndo) {
@@ -478,6 +507,7 @@ final class LauncherSurface extends View {
         recalculateGeometry();
         refreshSettingsValueCache();
         invalidate();
+        notifyAccessibilityContentChanged();
     }
 
     int getPage() {
@@ -513,6 +543,7 @@ final class LauncherSurface extends View {
             transitionRunning = false;
             transitionOldOffset = 0f;
             invalidate();
+            notifyAccessibilityContentChanged();
             return;
         }
         long duration = Math.max(60L, Math.round(baseDuration * fraction));
@@ -533,6 +564,7 @@ final class LauncherSurface extends View {
                 transitionOldOffset = 0f;
                 pageAnimator = null;
                 invalidate();
+                notifyAccessibilityContentChanged();
             }
         });
         pageAnimator.start();
@@ -1096,6 +1128,7 @@ final class LauncherSurface extends View {
             case 16: return "Hidden apps";
             case 17: return "Export config";
             case 18: return "Import config";
+            case 19: return "How to use";
             default: return "";
         }
     }
@@ -1133,6 +1166,7 @@ final class LauncherSurface extends View {
                 case 14: value = titleCase(uiConfig.animationSpeed); break;
                 case 15: value = onOff(uiConfig.haptics); break;
                 case 16: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
+                case 19: value = "Guide"; break;
                 default: value = ""; break;
             }
             settingsValues[index] = value;
@@ -1576,6 +1610,7 @@ final class LauncherSurface extends View {
             case 16: host.onSettingAction(ACTION_HIDDEN_APPS); break;
             case 17: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
             case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            case 19: host.onSettingAction(ACTION_HELP); break;
             default: break;
         }
     }
@@ -1682,6 +1717,674 @@ final class LauncherSurface extends View {
         if (velocityTracker != null) {
             velocityTracker.recycle();
             velocityTracker = null;
+        }
+    }
+
+    @Override public AccessibilityNodeProvider getAccessibilityNodeProvider() {
+        if (accessibilityProvider == null) {
+            accessibilityProvider = new LauncherAccessibilityProvider();
+        }
+        return accessibilityProvider;
+    }
+
+    @Override public boolean dispatchHoverEvent(MotionEvent event) {
+        if (accessibilityManager == null
+                || !accessibilityManager.isEnabled()
+                || !accessibilityManager.isTouchExplorationEnabled()) {
+            return super.dispatchHoverEvent(event);
+        }
+
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_HOVER_EXIT) {
+            updateAccessibilityHover(A11Y_NONE);
+            return true;
+        }
+        if (action != MotionEvent.ACTION_HOVER_ENTER && action != MotionEvent.ACTION_HOVER_MOVE) {
+            return super.dispatchHoverEvent(event);
+        }
+
+        int virtualId = accessibilityVirtualIdAt(event.getX(), event.getY());
+        updateAccessibilityHover(virtualId);
+        return virtualId != A11Y_NONE;
+    }
+
+    private void updateAccessibilityHover(int virtualId) {
+        if (accessibilityHoverId == virtualId) return;
+        int previous = accessibilityHoverId;
+        accessibilityHoverId = virtualId;
+        if (previous != A11Y_NONE) {
+            sendAccessibilityEventForVirtualView(
+                    previous,
+                    AccessibilityEvent.TYPE_VIEW_HOVER_EXIT
+            );
+        }
+        if (virtualId != A11Y_NONE) {
+            sendAccessibilityEventForVirtualView(
+                    virtualId,
+                    AccessibilityEvent.TYPE_VIEW_HOVER_ENTER
+            );
+        }
+    }
+
+    private void notifyAccessibilityContentChanged() {
+        if (accessibilityManager != null && accessibilityManager.isEnabled()) {
+            sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+        }
+    }
+
+    private void sendAccessibilityEventForVirtualView(int virtualId, int eventType) {
+        if (accessibilityManager == null || !accessibilityManager.isEnabled()) return;
+        CharSequence label = accessibilityLabel(virtualId);
+        if (label == null) return;
+
+        AccessibilityEvent event = AccessibilityEvent.obtain(eventType);
+        event.setPackageName(getContext().getPackageName());
+        event.setClassName("android.widget.Button");
+        event.setSource(this, virtualId);
+        event.getText().add(label);
+        if (getParent() != null) getParent().requestSendAccessibilityEvent(this, event);
+    }
+
+    private int accessibilityVirtualIdAt(float x, float y) {
+        if (transientUndoVisible
+                && x >= transientUndoLeftPx - dp(18f)
+                && x <= rightPx
+                && y >= transientTapTopPx
+                && y <= transientTapBottomPx) {
+            return A11Y_UNDO;
+        }
+
+        if (page == PAGE_HOME) {
+            int status = accessibilityStatusIdAt(x, y);
+            if (status != A11Y_NONE) return status;
+
+            int index = homeIndexAt(x, y);
+            if (index >= 0 && homeAccessibilityLabel(index) != null) {
+                return A11Y_HOME_BASE + index;
+            }
+            return A11Y_NONE;
+        }
+
+        if (page == PAGE_APPS) {
+            if (!searchActive
+                    && x >= leftPx
+                    && x <= rightPx
+                    && y >= contentTopPx
+                    && y < appsViewportTopPx) {
+                return A11Y_APPS_SEARCH;
+            }
+            int index = allAppsIndexAt(x, y);
+            return index >= 0 ? A11Y_APP_BASE + index : A11Y_NONE;
+        }
+
+        int index = settingsIndexAt(x, y);
+        return index >= 0 ? A11Y_SETTINGS_BASE + index : A11Y_NONE;
+    }
+
+    private int accessibilityStatusIdAt(float x, float y) {
+        float midpoint = getWidth() * 0.5f;
+        if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
+            if (uiConfig.showBattery && x >= midpoint) return A11Y_BATTERY;
+            if (uiConfig.showWeather) return A11Y_WEATHER;
+        }
+
+        float top = contentTopPx;
+        if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && y >= top && y < top + dp(38f)) return A11Y_DATE;
+            if (uiConfig.showTime && y >= top + dp(38f) && y < top + dp(104f)) {
+                return A11Y_TIME;
+            }
+        } else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && x >= midpoint && y >= top && y < top + dp(42f)) {
+                return A11Y_DATE;
+            }
+            if (uiConfig.showTime && x < midpoint && y >= top && y < top + dp(78f)) {
+                return A11Y_TIME;
+            }
+        } else {
+            if (uiConfig.showTime && y >= top && y < top + dp(70f)) return A11Y_TIME;
+            if (uiConfig.showDate && y >= top + dp(70f) && y < top + dp(106f)) {
+                return A11Y_DATE;
+            }
+        }
+        return A11Y_NONE;
+    }
+
+    private CharSequence accessibilityLabel(int virtualId) {
+        if (virtualId == A11Y_TIME) return "Time " + timeText + ". Open alarms";
+        if (virtualId == A11Y_DATE) return "Date " + dateText + ". Open calendar";
+        if (virtualId == A11Y_WEATHER) return weatherText + ". Refresh weather";
+        if (virtualId == A11Y_BATTERY) {
+            return "Battery " + batteryText + ". Open battery settings";
+        }
+        if (virtualId == A11Y_APPS_SEARCH) return "Search apps";
+        if (virtualId == A11Y_UNDO) return "Undo " + transientMessage;
+
+        if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            return homeAccessibilityLabel(virtualId - A11Y_HOME_BASE);
+        }
+
+        if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            int index = virtualId - A11Y_APP_BASE;
+            if (searchActive) {
+                if (index < 0 || index >= searchResults.size()) return null;
+                SearchResult result = searchResults.get(index);
+                return result.meta.isEmpty()
+                        ? result.label
+                        : result.label + ", " + result.meta;
+            }
+            if (index < 0 || index >= browseItems.size()) return null;
+            AppListItem item = browseItems.get(index);
+            return item.value.isEmpty() ? item.label : item.label + ", " + item.value;
+        }
+
+        if (virtualId >= A11Y_SETTINGS_BASE) {
+            int index = virtualId - A11Y_SETTINGS_BASE;
+            if (index < 0 || index >= SETTINGS_ROW_COUNT) return null;
+            String value = settingsValues[index];
+            return value == null || value.isEmpty()
+                    ? settingsLabel(index)
+                    : settingsLabel(index) + ", " + value;
+        }
+        return null;
+    }
+
+    private CharSequence homeAccessibilityLabel(int index) {
+        if (index < 0 || index >= visibleHomeRowsCache) return null;
+        AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
+        String configured = index < homeLabels.size() ? homeLabels.get(index) : "";
+        if (app != null) {
+            String label = configured.isEmpty() ? app.label : configured;
+            String shortcut = index < homeShortcutIds.size() ? homeShortcutIds.get(index) : "";
+            return shortcut == null || shortcut.isEmpty()
+                    ? label + ", app"
+                    : label + ", shortcut";
+        }
+        if (!configured.isEmpty()) return configured + ", unavailable";
+        return isFirstVisibleEmptyHomeSlot(index) ? "Add app" : null;
+    }
+
+    private boolean homeAccessibilityLongClickable(int index) {
+        if (index < 0 || index >= visibleHomeRowsCache) return false;
+        AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
+        String configured = index < homeLabels.size() ? homeLabels.get(index) : "";
+        return app != null || !configured.isEmpty();
+    }
+
+    private boolean accessibilityBounds(int virtualId, Rect out) {
+        if (virtualId == A11Y_UNDO) {
+            if (!transientUndoVisible) return false;
+            out.set(
+                    Math.round(transientUndoLeftPx - dp(18f)),
+                    Math.round(transientTapTopPx),
+                    Math.round(rightPx),
+                    Math.round(transientTapBottomPx)
+            );
+            return true;
+        }
+
+        if (virtualId == A11Y_APPS_SEARCH) {
+            if (page != PAGE_APPS || searchActive) return false;
+            out.set(
+                    Math.round(leftPx),
+                    Math.round(contentTopPx),
+                    Math.round(rightPx),
+                    Math.round(appsViewportTopPx)
+            );
+            return true;
+        }
+
+        if (virtualId == A11Y_TIME
+                || virtualId == A11Y_DATE
+                || virtualId == A11Y_WEATHER
+                || virtualId == A11Y_BATTERY) {
+            return accessibilityStatusBounds(virtualId, out);
+        }
+
+        if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            if (page != PAGE_HOME) return false;
+            int index = virtualId - A11Y_HOME_BASE;
+            if (homeAccessibilityLabel(index) == null) return false;
+            float top = homeListStartPx + index * rowHeightPx;
+            out.set(
+                    Math.round(leftPx),
+                    Math.round(top),
+                    Math.round(rightPx),
+                    Math.round(top + rowHeightPx)
+            );
+            return true;
+        }
+
+        if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            if (page != PAGE_APPS) return false;
+            int index = virtualId - A11Y_APP_BASE;
+            int count = searchActive ? searchResults.size() : browseItems.size();
+            if (index < 0 || index >= count) return false;
+            float top = appsViewportTopPx - appScroll + index * rowHeightPx;
+            if (top + rowHeightPx <= appsViewportTopPx || top >= appsViewportBottomPx) return false;
+            out.set(
+                    Math.round(leftPx),
+                    Math.round(Math.max(top, appsViewportTopPx)),
+                    Math.round(rightPx),
+                    Math.round(Math.min(top + rowHeightPx, appsViewportBottomPx))
+            );
+            return true;
+        }
+
+        if (virtualId >= A11Y_SETTINGS_BASE) {
+            if (page != PAGE_SETTINGS) return false;
+            int index = virtualId - A11Y_SETTINGS_BASE;
+            if (index < 0 || index >= SETTINGS_ROW_COUNT) return false;
+            float top = settingsRowTops[index] - settingsScroll;
+            if (top + rowHeightPx <= settingsViewportTopPx || top >= settingsViewportBottomPx) {
+                return false;
+            }
+            out.set(
+                    Math.round(leftPx),
+                    Math.round(Math.max(top, settingsViewportTopPx)),
+                    Math.round(rightPx),
+                    Math.round(Math.min(top + rowHeightPx, settingsViewportBottomPx))
+            );
+            return true;
+        }
+        return false;
+    }
+
+    private boolean accessibilityStatusBounds(int virtualId, Rect out) {
+        if (page != PAGE_HOME) return false;
+        float midpoint = getWidth() * 0.5f;
+        float top = contentTopPx;
+
+        if (virtualId == A11Y_WEATHER) {
+            if (!uiConfig.showWeather) return false;
+            out.set(
+                    Math.round(leftPx),
+                    Math.round(weatherTapTopPx),
+                    Math.round(midpoint),
+                    Math.round(weatherTapBottomPx)
+            );
+            return true;
+        }
+        if (virtualId == A11Y_BATTERY) {
+            if (!uiConfig.showBattery) return false;
+            out.set(
+                    Math.round(midpoint),
+                    Math.round(weatherTapTopPx),
+                    Math.round(rightPx),
+                    Math.round(weatherTapBottomPx)
+            );
+            return true;
+        }
+
+        if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
+            if (virtualId == A11Y_DATE && uiConfig.showDate) {
+                out.set(
+                        Math.round(leftPx),
+                        Math.round(top),
+                        Math.round(rightPx),
+                        Math.round(top + dp(38f))
+                );
+                return true;
+            }
+            if (virtualId == A11Y_TIME && uiConfig.showTime) {
+                out.set(
+                        Math.round(leftPx),
+                        Math.round(top + dp(38f)),
+                        Math.round(rightPx),
+                        Math.round(top + dp(104f))
+                );
+                return true;
+            }
+        } else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) {
+            if (virtualId == A11Y_DATE && uiConfig.showDate) {
+                out.set(
+                        Math.round(midpoint),
+                        Math.round(top),
+                        Math.round(rightPx),
+                        Math.round(top + dp(42f))
+                );
+                return true;
+            }
+            if (virtualId == A11Y_TIME && uiConfig.showTime) {
+                out.set(
+                        Math.round(leftPx),
+                        Math.round(top),
+                        Math.round(midpoint),
+                        Math.round(top + dp(78f))
+                );
+                return true;
+            }
+        } else {
+            if (virtualId == A11Y_TIME && uiConfig.showTime) {
+                out.set(
+                        Math.round(leftPx),
+                        Math.round(top),
+                        Math.round(rightPx),
+                        Math.round(top + dp(70f))
+                );
+                return true;
+            }
+            if (virtualId == A11Y_DATE && uiConfig.showDate) {
+                out.set(
+                        Math.round(leftPx),
+                        Math.round(top + dp(70f)),
+                        Math.round(rightPx),
+                        Math.round(top + dp(106f))
+                );
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean performAccessibilityClick(int virtualId) {
+        if (virtualId == A11Y_TIME) {
+            host.onClockTapped();
+            return true;
+        }
+        if (virtualId == A11Y_DATE) {
+            host.onDateTapped();
+            return true;
+        }
+        if (virtualId == A11Y_WEATHER) {
+            host.onWeatherTapped();
+            return true;
+        }
+        if (virtualId == A11Y_BATTERY) {
+            host.onBatteryTapped();
+            return true;
+        }
+        if (virtualId == A11Y_APPS_SEARCH) {
+            host.onAppsSearchRequested();
+            return true;
+        }
+        if (virtualId == A11Y_UNDO && transientUndoVisible) {
+            host.onUndoRequested();
+            return true;
+        }
+
+        if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            int index = virtualId - A11Y_HOME_BASE;
+            if (index < 0 || index >= visibleHomeRowsCache) return false;
+            AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
+            String shortcutId = index < homeShortcutIds.size()
+                    ? homeShortcutIds.get(index)
+                    : "";
+            if (app != null && shortcutId != null && !shortcutId.isEmpty()) {
+                host.onOpenHomeShortcut(app, shortcutId);
+                return true;
+            }
+            if (app != null) {
+                host.onOpenApp(app);
+                return true;
+            }
+            if (isFirstVisibleEmptyHomeSlot(index)) {
+                host.onEmptyHomeSlotTapped(index);
+                return true;
+            }
+            return false;
+        }
+
+        if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            int index = virtualId - A11Y_APP_BASE;
+            if (searchActive) {
+                if (index < 0 || index >= searchResults.size()) return false;
+                host.onSearchResultTapped(searchResults.get(index));
+                return true;
+            }
+            AppEntry app = appAtVisibleIndex(index);
+            if (app != null) {
+                host.onOpenApp(app);
+                return true;
+            }
+            AppListItem profile = profileItemAtVisibleIndex(index);
+            if (profile != null) {
+                host.onProfileHeaderTapped(profile.profileKind, profile.profileSerial);
+                return true;
+            }
+            return false;
+        }
+
+        if (virtualId >= A11Y_SETTINGS_BASE) {
+            int index = virtualId - A11Y_SETTINGS_BASE;
+            if (index < 0 || index >= SETTINGS_ROW_COUNT) return false;
+            handleSettingsRow(index);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean performAccessibilityLongClick(int virtualId) {
+        if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            int index = virtualId - A11Y_HOME_BASE;
+            if (!homeAccessibilityLongClickable(index)) return false;
+            host.onHomeSlotLongPressed(index);
+            return true;
+        }
+
+        if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            int index = virtualId - A11Y_APP_BASE;
+            AppEntry app = appAtVisibleIndex(index);
+            if (app == null) return false;
+            host.onAllAppsLongPressed(app);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean accessibilityScroll(boolean forward) {
+        float old;
+        float next;
+        if (page == PAGE_APPS) {
+            old = appScroll;
+            float viewport = Math.max(1f, appsViewportBottomPx - appsViewportTopPx);
+            next = clamp(
+                    old + (forward ? viewport * 0.8f : -viewport * 0.8f),
+                    0f,
+                    maxAppScroll()
+            );
+            if (next == old) return false;
+            scroller.abortAnimation();
+            appScroll = next;
+        } else if (page == PAGE_SETTINGS) {
+            old = settingsScroll;
+            float viewport = Math.max(1f, settingsViewportBottomPx - settingsViewportTopPx);
+            next = clamp(
+                    old + (forward ? viewport * 0.8f : -viewport * 0.8f),
+                    0f,
+                    maxSettingsScroll()
+            );
+            if (next == old) return false;
+            scroller.abortAnimation();
+            settingsScroll = next;
+        } else {
+            return false;
+        }
+        invalidate();
+        sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED);
+        return true;
+    }
+
+    private final class LauncherAccessibilityProvider extends AccessibilityNodeProvider {
+        @Override public AccessibilityNodeInfo createAccessibilityNodeInfo(int virtualViewId) {
+            if (virtualViewId == AccessibilityNodeProvider.HOST_VIEW_ID) {
+                return createHostNode();
+            }
+
+            CharSequence label = accessibilityLabel(virtualViewId);
+            if (label == null) return null;
+
+            Rect bounds = new Rect();
+            if (!accessibilityBounds(virtualViewId, bounds)) return null;
+
+            AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain();
+            node.setPackageName(getContext().getPackageName());
+            node.setClassName("android.widget.Button");
+            node.setSource(LauncherSurface.this, virtualViewId);
+            node.setParent(LauncherSurface.this);
+            node.setText(label);
+            node.setVisibleToUser(true);
+            node.setEnabled(true);
+            node.setClickable(true);
+            node.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+            boolean longClickable = false;
+            if (virtualViewId >= A11Y_HOME_BASE && virtualViewId < A11Y_APP_BASE) {
+                longClickable = homeAccessibilityLongClickable(
+                        virtualViewId - A11Y_HOME_BASE
+                );
+            } else if (virtualViewId >= A11Y_APP_BASE
+                    && virtualViewId < A11Y_SETTINGS_BASE) {
+                longClickable = appAtVisibleIndex(virtualViewId - A11Y_APP_BASE) != null;
+            }
+            node.setLongClickable(longClickable);
+            if (longClickable) node.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+
+            node.setAccessibilityFocused(accessibilityFocusedId == virtualViewId);
+            node.addAction(
+                    accessibilityFocusedId == virtualViewId
+                            ? AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS
+                            : AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS
+            );
+
+            node.setBoundsInParent(bounds);
+            getLocationOnScreen(accessibilityScreenLocation);
+            bounds.offset(accessibilityScreenLocation[0], accessibilityScreenLocation[1]);
+            node.setBoundsInScreen(bounds);
+            return node;
+        }
+
+        private AccessibilityNodeInfo createHostNode() {
+            AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain(LauncherSurface.this);
+            node.setPackageName(getContext().getPackageName());
+            node.setClassName(LauncherSurface.class.getName());
+            node.setSource(LauncherSurface.this);
+            node.setContentDescription("VS Launcher");
+
+            if (transientUndoVisible) node.addChild(LauncherSurface.this, A11Y_UNDO);
+
+            if (page == PAGE_HOME) {
+                if (uiConfig.showTime) node.addChild(LauncherSurface.this, A11Y_TIME);
+                if (uiConfig.showDate) node.addChild(LauncherSurface.this, A11Y_DATE);
+                if (uiConfig.showWeather) node.addChild(LauncherSurface.this, A11Y_WEATHER);
+                if (uiConfig.showBattery) node.addChild(LauncherSurface.this, A11Y_BATTERY);
+                for (int index = 0; index < visibleHomeRowsCache; index++) {
+                    if (homeAccessibilityLabel(index) != null) {
+                        node.addChild(LauncherSurface.this, A11Y_HOME_BASE + index);
+                    }
+                }
+                return node;
+            }
+
+            if (page == PAGE_APPS) {
+                if (!searchActive) node.addChild(LauncherSurface.this, A11Y_APPS_SEARCH);
+                int count = searchActive ? searchResults.size() : browseItems.size();
+                float start = appsViewportTopPx - appScroll;
+                int first = LauncherLayout.firstVisibleIndex(
+                        appsViewportTopPx,
+                        start,
+                        rowHeightPx,
+                        count
+                );
+                int last = LauncherLayout.lastVisibleExclusive(
+                        appsViewportBottomPx,
+                        start,
+                        rowHeightPx,
+                        count
+                );
+                for (int index = first; index < last; index++) {
+                    node.addChild(LauncherSurface.this, A11Y_APP_BASE + index);
+                }
+                if (maxAppScroll() > 0f) {
+                    node.setScrollable(true);
+                    node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+                    node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+                }
+                return node;
+            }
+
+            for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+                float top = settingsRowTops[index] - settingsScroll;
+                if (top + rowHeightPx <= settingsViewportTopPx
+                        || top >= settingsViewportBottomPx) {
+                    continue;
+                }
+                node.addChild(LauncherSurface.this, A11Y_SETTINGS_BASE + index);
+            }
+            if (maxSettingsScroll() > 0f) {
+                node.setScrollable(true);
+                node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+                node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+            }
+            return node;
+        }
+
+        @Override public boolean performAction(
+                int virtualViewId,
+                int action,
+                Bundle arguments
+        ) {
+            if (virtualViewId == AccessibilityNodeProvider.HOST_VIEW_ID) {
+                if (action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
+                    return accessibilityScroll(true);
+                }
+                if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+                    return accessibilityScroll(false);
+                }
+                return false;
+            }
+
+            if (action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
+                if (accessibilityFocusedId == virtualViewId) return false;
+                int previous = accessibilityFocusedId;
+                accessibilityFocusedId = virtualViewId;
+                if (previous != A11Y_NONE) {
+                    sendAccessibilityEventForVirtualView(
+                            previous,
+                            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED
+                    );
+                }
+                sendAccessibilityEventForVirtualView(
+                        virtualViewId,
+                        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+                );
+                invalidate();
+                return true;
+            }
+
+            if (action == AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
+                if (accessibilityFocusedId != virtualViewId) return false;
+                accessibilityFocusedId = A11Y_NONE;
+                sendAccessibilityEventForVirtualView(
+                        virtualViewId,
+                        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED
+                );
+                invalidate();
+                return true;
+            }
+
+            if (action == AccessibilityNodeInfo.ACTION_CLICK) {
+                boolean handled = performAccessibilityClick(virtualViewId);
+                if (handled) {
+                    sendAccessibilityEventForVirtualView(
+                            virtualViewId,
+                            AccessibilityEvent.TYPE_VIEW_CLICKED
+                    );
+                }
+                return handled;
+            }
+
+            if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {
+                boolean handled = performAccessibilityLongClick(virtualViewId);
+                if (handled) {
+                    sendAccessibilityEventForVirtualView(
+                            virtualViewId,
+                            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
+                    );
+                }
+                return handled;
+            }
+            return false;
         }
     }
 

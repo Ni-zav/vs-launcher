@@ -3,8 +3,11 @@ package com.vslauncher;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -87,6 +90,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
+    private String normalizedQuery = "";
     private String latestWeatherText = "Tap for weather";
     private int bottomInset;
     private int maxHomeApps = 5;
@@ -332,10 +336,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
-        searchResults = buildSearchResults(query, filteredApps);
+        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setApps(apps, filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -592,10 +596,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void addSearch(boolean focus) {
         surface.setSearchActive(true);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
-        searchResults = buildSearchResults(query, filteredApps);
+        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -621,16 +625,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                filteredApps = AppRepository.filter(
+                normalizedQuery = SearchNormalization.normalize(query);
+                filteredApps = AppRepository.filterNormalized(
                         apps,
-                        query,
+                        normalizedQuery,
                         normalizedAliases,
                         aliasInitials
                 );
-                searchResults = buildSearchResults(query, filteredApps);
+                searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
-                scheduleSingleResultLaunch(query, searchResults);
+                surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
+                scheduleSingleResultLaunch(normalizedQuery, searchResults);
             }
 
             @Override public void afterTextChanged(Editable s) {
@@ -686,11 +691,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         cancelPendingSingleResultLaunch();
         if (search == null) {
             query = "";
+            normalizedQuery = "";
             surface.setSearchActive(false);
             filteredApps = apps;
             searchResults = Collections.emptyList();
             surface.setFilteredApps(filteredApps);
-            surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+            surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
             return;
         }
 
@@ -701,15 +707,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.removeView(search);
         search = null;
         query = "";
+        normalizedQuery = "";
         surface.setSearchActive(false);
         filteredApps = apps;
         searchResults = Collections.emptyList();
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
     }
 
     private List<SearchResult> buildSearchResults(
             String rawQuery,
+            String normalizedQuery,
             List<AppEntry> appMatches
     ) {
         ArrayList<SearchResult> results = new ArrayList<>(
@@ -717,8 +725,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         );
         for (AppEntry app : appMatches) results.add(SearchResult.app(app));
 
-        if (!SearchNormalization.normalize(rawQuery).isEmpty()) {
-            for (SearchCommand command : SearchCommand.matching(rawQuery)) {
+        if (!normalizedQuery.isEmpty()) {
+            for (SearchCommand command : SearchCommand.matchingNormalized(normalizedQuery)) {
                 results.add(SearchResult.command(command));
             }
 
@@ -727,6 +735,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             String url = QueryActions.urlPayload(rawQuery);
             if (url != null) results.add(SearchResult.url(url));
+
+            TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
+            if (timer != null) results.add(SearchResult.timer(timer));
+
+            TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
+            if (alarm != null) results.add(SearchResult.alarm(alarm));
+
+            String calculation = CalculatorAction.evaluate(rawQuery);
+            if (calculation != null) results.add(SearchResult.calculation(calculation));
+
+            if (QueryActions.shouldOfferWebFallback(normalizedQuery, results.size())) {
+                results.add(SearchResult.web(rawQuery.trim()));
+            }
         }
 
         return results.isEmpty()
@@ -753,6 +774,62 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         if (result.type == SearchResult.TYPE_URL) {
             launchExternalIntent(new Intent(Intent.ACTION_VIEW, Uri.parse(result.payload)));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_TIMER) {
+            try {
+                int seconds = Integer.parseInt(result.payload);
+                Intent timer = new Intent(AlarmClock.ACTION_SET_TIMER)
+                        .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                        .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
+                        .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
+                if (launchExternalIntent(timer)) showTransientStatus("Timer set");
+            } catch (NumberFormatException ignored) {
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_ALARM) {
+            String[] parts = result.payload.split(":", 2);
+            if (parts.length == 2) {
+                try {
+                    int hour = Integer.parseInt(parts[0]);
+                    int minute = Integer.parseInt(parts[1]);
+                    Intent alarm = new Intent(AlarmClock.ACTION_SET_ALARM)
+                            .putExtra(AlarmClock.EXTRA_HOUR, hour)
+                            .putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                            .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
+                            .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
+                    if (launchExternalIntent(alarm)) showTransientStatus("Alarm set · " + result.payload);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_CALC) {
+            ClipboardManager clipboard =
+                    (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Calculation", result.payload));
+                showTransientStatus("Copied · " + result.payload);
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_WEB) {
+            Intent web = new Intent(Intent.ACTION_WEB_SEARCH)
+                    .putExtra(SearchManager.QUERY, result.payload);
+            if (!launchExternalIntent(web)) {
+                Uri fallback = new Uri.Builder()
+                        .scheme("https")
+                        .authority("www.google.com")
+                        .path("search")
+                        .appendQueryParameter("q", result.payload)
+                        .build();
+                launchExternalIntent(new Intent(Intent.ACTION_VIEW, fallback));
+            }
             return;
         }
 
@@ -831,6 +908,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
                 }
                 break;
+            case SearchCommand.HELP:
+                showHowToUseDialog();
+                break;
             default:
                 break;
         }
@@ -842,12 +922,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void scheduleSingleResultLaunch(
-            String currentQuery,
+            String currentNormalizedQuery,
             List<SearchResult> currentResults
     ) {
         cancelPendingSingleResultLaunch();
-        String normalizedQuery = SearchNormalization.normalize(currentQuery);
-        if (normalizedQuery.isEmpty()) return;
+        if (currentNormalizedQuery.isEmpty()) return;
 
         SearchResult onlyApp = singleAppResult(currentResults);
         if (onlyApp == null) return;
@@ -856,7 +935,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
-                    || !normalizedQuery.equals(SearchNormalization.normalize(query))
+                    || !currentNormalizedQuery.equals(normalizedQuery)
                     || singleAppResult(searchResults) != onlyApp) {
                 return;
             }
@@ -868,6 +947,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private static SearchResult singleAppResult(List<SearchResult> results) {
         SearchResult only = null;
         for (SearchResult result : results) {
+            if (result.blocksAppAutoLaunch()) return null;
             if (!result.isApp()) continue;
             if (only != null) return null;
             only = result;
@@ -1111,6 +1191,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 return;
             case LauncherSurface.ACTION_IMPORT_CONFIG:
                 importConfiguration();
+                return;
+            case LauncherSurface.ACTION_HELP:
+                showHowToUseDialog();
                 return;
             default:
                 return;
@@ -1456,6 +1539,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         mainHandler.postDelayed(pendingUndoClear, 2500L);
     }
 
+    private void showTransientStatus(String message) {
+        clearUndo();
+        surface.setTransientMessage(message, false);
+        pendingUndoClear = this::clearUndo;
+        mainHandler.postDelayed(pendingUndoClear, 2500L);
+    }
+
     private void clearUndo() {
         if (pendingUndoClear != null) {
             mainHandler.removeCallbacks(pendingUndoClear);
@@ -1537,6 +1627,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (values[i].equals(current)) return values[(i + 1) % values.length];
         }
         return values[0];
+    }
+
+    private void showHowToUseDialog() {
+        String guide =
+                "HOME\n"
+                        + "Swipe left: search · right: settings · up: quick app\n"
+                        + "Tap time/date/battery/weather for their native actions.\n\n"
+                        + "SEARCH\n"
+                        + "Type an app name. One stable app result opens automatically.\n"
+                        + "Go/Enter runs the first result. Useful queries:\n"
+                        + "timer 10m · alarm 07:30 · 23*17 · wifi · example.com\n"
+                        + "Type help to reopen this guide.\n\n"
+                        + "APPS\n"
+                        + "Start scrolling search to enter browse mode. Use A–Z + # on the right.\n"
+                        + "Tap APPS or pull down at the top to search again.\n\n"
+                        + "LONG PRESS\n"
+                        + "Apps: shortcuts, pin to Home, hide, info, uninstall.\n"
+                        + "Home rows: change, rename, move, or clear.\n\n"
+                        + "BACK\n"
+                        + "Search → Browse → Home.";
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("How to use VS")
+                .setMessage(guide)
+                .setPositiveButton("Done", null)
+                .show();
     }
 
     private void showHiddenAppsManager() {

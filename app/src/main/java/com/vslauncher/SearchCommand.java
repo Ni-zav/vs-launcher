@@ -21,6 +21,7 @@ final class SearchCommand {
     static final String SOUND = "sound";
     static final String LOCATION = "location";
     static final String NOTIFICATIONS = "notifications";
+    static final String HELP = "help";
 
     private static final SearchCommand[] ALL = {
             new SearchCommand(WIFI, "Wi-Fi", "wifi", "wi fi", "wireless"),
@@ -50,15 +51,27 @@ final class SearchCommand {
                     "notifications",
                     "notification settings"
             )
+,
+            new SearchCommand(
+                    HELP,
+                    "How to use",
+                    "help",
+                    "how to use",
+                    "guide",
+                    "tips",
+                    "launcher help"
+            )
     };
 
     final String id;
     final String label;
+    private final String normalizedLabel;
     private final String[] normalizedKeywords;
 
     private SearchCommand(String id, String label, String... keywords) {
         this.id = id;
         this.label = label;
+        normalizedLabel = SearchNormalization.normalize(label);
         normalizedKeywords = new String[keywords.length];
         for (int i = 0; i < keywords.length; i++) {
             normalizedKeywords[i] = SearchNormalization.normalize(keywords[i]);
@@ -67,8 +80,7 @@ final class SearchCommand {
 
     private boolean matches(String normalizedQuery) {
         if (normalizedQuery.length() < 2) return false;
-        String labelKey = SearchNormalization.normalize(label);
-        if (labelKey.startsWith(normalizedQuery)) return true;
+        if (normalizedLabel.startsWith(normalizedQuery)) return true;
         for (String keyword : normalizedKeywords) {
             if (keyword.startsWith(normalizedQuery) || keyword.equals(normalizedQuery)) return true;
         }
@@ -76,12 +88,17 @@ final class SearchCommand {
     }
 
     static List<SearchCommand> matching(String query) {
-        String normalized = SearchNormalization.normalize(query);
-        if (normalized.length() < 2) return Collections.emptyList();
+        return matchingNormalized(SearchNormalization.normalize(query));
+    }
+
+    static List<SearchCommand> matchingNormalized(String normalizedQuery) {
+        if (normalizedQuery == null || normalizedQuery.length() < 2) {
+            return Collections.emptyList();
+        }
 
         ArrayList<SearchCommand> result = new ArrayList<>();
         for (SearchCommand command : ALL) {
-            if (command.matches(normalized)) result.add(command);
+            if (command.matches(normalizedQuery)) result.add(command);
         }
         return result.isEmpty()
                 ? Collections.emptyList()

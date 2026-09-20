@@ -64,6 +64,19 @@ for method in hot_methods:
         if forbidden in body:
             errors.append(f"{method} contains draw-time forbidden token: {forbidden}")
 
+for method in hot_methods:
+    body = method_body(surface, method)
+    for accessibility_token in (
+        "AccessibilityNodeInfo",
+        "AccessibilityEvent",
+        "accessibilityManager",
+        "accessibilityProvider",
+    ):
+        if accessibility_token in body:
+            errors.append(
+                f"{method} must not perform accessibility work from the draw hot path"
+            )
+
 settings_row = method_body(surface, "drawSettingsRow")
 if "dividerPaint" in settings_row:
     errors.append("Settings rows must stay dividerless; sections are grouped by whitespace")
@@ -83,6 +96,55 @@ for forbidden in ("SharedPreferences", "PackageManager", "LauncherApps", "launch
 text_changed = method_body(main, "onTextChanged")
 if "launcherPreferences.aliases()" in text_changed or "getAll()" in text_changed:
     errors.append("Search TextWatcher must not read SharedPreferences aliases")
+if text_changed.count("SearchNormalization.normalize(") != 1:
+    errors.append("Search TextWatcher must normalize the typed query exactly once")
+if "AppRepository.filter(" in text_changed:
+    errors.append("Search TextWatcher must pass the cached normalized query to filterNormalized")
+
+filter_normalized = method_body(
+    (MAIN_SRC / "com/vslauncher/AppRepository.java").read_text(encoding="utf-8"),
+    "filterNormalized",
+)
+if "SearchNormalization.normalize(" in filter_normalized:
+    errors.append("filterNormalized must not normalize the query again")
+
+if filter_normalized.count("for (AppEntry app : source)") != 1:
+    errors.append("filterNormalized must keep one traversal of the searchable app list")
+for forbidden in (".stream(", ".sort(", "Collections.sort("):
+    if forbidden in filter_normalized:
+        errors.append(f"filterNormalized must stay linear; found {forbidden}")
+
+single_app_result = method_body(main, "singleAppResult")
+if "blocksAppAutoLaunch()" not in single_app_result:
+    errors.append("Singleton app auto-launch must stop for explicit structured utility rows")
+
+build_results = method_body(main, "buildSearchResults")
+for required in (
+    "SearchCommand.matchingNormalized(normalizedQuery)",
+    "TimeQueryActions.alarmNormalized(normalizedQuery)",
+):
+    if required not in build_results:
+        errors.append(f"Search actions must reuse the cached normalized query: missing {required}")
+
+for utility in (
+    "QueryActions.java",
+    "TimeQueryActions.java",
+    "CalculatorAction.java",
+    "SearchCommand.java",
+):
+    utility_text = (MAIN_SRC / "com/vslauncher" / utility).read_text(encoding="utf-8")
+    for forbidden in (
+        "PackageManager",
+        "LauncherApps",
+        "SharedPreferences",
+        "java.net",
+        "HttpURLConnection",
+        "getSystemService(",
+        "FileInputStream",
+        "FileOutputStream",
+    ):
+        if forbidden in utility_text:
+            errors.append(f"{utility} must stay local and I/O-free; found {forbidden}")
 
 manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "android.permission.QUERY_ALL_PACKAGES" in manifest:
@@ -131,7 +193,7 @@ for forbidden in (
     if forbidden in production_text:
         errors.append(f"Production UI must remain framework-light; found {forbidden}")
 
-for required in ('"HOME"', '"STATUS"', '"GESTURES"', '"APPS"', '"DATA"'):
+for required in ('"HOME"', '"STATUS"', '"GESTURES"', '"APPS"', '"DATA"', '"HELP"'):
     if required not in surface:
         errors.append(f"Missing Settings section label {required}")
 

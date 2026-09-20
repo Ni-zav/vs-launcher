@@ -85,7 +85,12 @@ an incompatible-signature error.
 
 5. **searchFilterFrames**
    - swipe left to Apps with focused search
-   - enter a query
+   - enter a normal app query
+   - `FrameTimingMetric`
+
+6. **utilitySearchFrames**
+   - swipe left to Apps with focused search
+   - parse `timer 10m` and `23*17` without executing either action
    - `FrameTimingMetric`
 
 Each test currently runs eight measured iterations.

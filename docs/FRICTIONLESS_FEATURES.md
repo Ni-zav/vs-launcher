@@ -8,7 +8,7 @@ The product rule is:
 
 This keeps Home quiet while making the launcher faster for deliberate interaction.
 
-## 0.7 interaction contract
+## 0.8 interaction contract
 
 ### Home
 
@@ -41,7 +41,7 @@ Home
 → auto-launch
 ```
 
-A stable single **app** result auto-launches after a short debounce. Quiet non-app command rows do not block that singleton-app behavior and never auto-launch themselves. Keyboard Go/Enter immediately executes the first ranked row.
+A stable single **app** result auto-launches after a short debounce when any accompanying rows are passive SYSTEM commands. Explicit structured utility rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB) and GUIDE suppress singleton app auto-launch so deliberate typed intent is never stolen. Non-app rows themselves never auto-launch. Keyboard Go/Enter immediately executes the first ranked row.
 
 Browse mode can return to search without going Home:
 
@@ -126,12 +126,31 @@ After ranked app results, search may append latent action rows:
 - `SYSTEM` for Android/launcher actions such as Wi-Fi, Internet, Volume, Bluetooth, Battery, Settings, Launcher settings, Alarms, Calendar, Storage, Keyboard, NFC, Display, Sound, Location, and Notifications
 - `DIAL` for phone-like numeric input using permissionless `ACTION_DIAL`
 - `OPEN` for domain/HTTP(S) input using `ACTION_VIEW`
+- `TIMER` / `ALARM` for explicit local time expressions delegated to Android `AlarmClock`
+- `CALC` for bounded local arithmetic; execution copies the displayed result
+- `GUIDE` for the same compact How-to-use content exposed at the bottom of Settings
+- `WEB` only as an explicit fallback when no app/system/direct utility already matches
+
+Examples:
+
+```text
+timer 10m
+timer 1h 30m
+alarm 07:30
+23*17
+example.com
+help
+```
 
 Rules:
 
 - apps stay before non-app rows
 - commands require at least two normalized characters
-- command-only results never auto-fire
+- command/direct-utility results never auto-fire
+- passive SYSTEM rows may coexist with lone-app auto-launch; explicit structured utility/GUIDE rows suppress it
+- the typed query is normalized exactly once per edit and the cached normalized value is reused
+- timer/alarm/calculator/URL/dial parsing stays local and I/O-free
+- web fallback delegates to Android/browser handling; VS performs no search request itself
 - no contacts, history, browser engine, AI parser, or call permission are introduced
 - Settings Panels are preferred for Wi-Fi/Internet/Volume/NFC on API 29+ when available
 
@@ -192,6 +211,30 @@ Android references:
 - LauncherApps: https://developer.android.com/reference/android/content/pm/LauncherApps
 - ShortcutQuery: https://developer.android.com/reference/android/content/pm/LauncherApps.ShortcutQuery
 
+## Help without permanent Home chrome
+
+Discoverability stays latent. Typing `help`, `how to use`, or `guide` opens the same concise guide as the bottom Settings row:
+
+```text
+HELP
+
+How to use                         Guide
+```
+
+The guide explains existing gestures and query syntax; it does not add a tutorial carousel, coach marks, Home badge, or first-run overlay.
+
+## Canvas accessibility without a new View hierarchy
+
+The Canvas remains the production renderer. A lazy platform `AccessibilityNodeProvider` exposes virtual semantic nodes for the controls already drawn on screen.
+
+- Home status/actions and Home rows are exposed
+- visible Apps/search/profile rows are exposed
+- visible Settings rows and browse-to-search are exposed
+- Apps/Settings support accessibility scroll actions
+- transient Undo is exposed only while it exists
+- node allocation/query work happens only when accessibility services ask for it
+- `onDraw()` remains free of accessibility-node/event construction
+- no RecyclerView/Compose/accessibility framework dependency is added
 ## Transient Undo
 
 Reversible launcher actions should not require confirmation dialogs.
@@ -319,7 +362,7 @@ Rejected because memorization/configuration becomes its own source of friction. 
 
 ## Performance invariants
 
-0.7 features must preserve:
+0.8 features must preserve:
 
 1. no continuous idle render loop
 2. no PackageManager/LauncherApps/SharedPreferences calls from `LauncherSurface`
@@ -334,5 +377,8 @@ Rejected because memorization/configuration becomes its own source of friction. 
 11. command/dial/URL rows never participate in automatic launch
 12. only one transient Undo action is retained in memory
 13. Settings/command execution stays outside `LauncherSurface`
+14. typed search normalizes once and utility parsers reuse cached normalized input where applicable
+15. utility parsers remain local/I/O-free and never add a second app-list traversal
+16. virtual accessibility nodes stay outside draw hot paths and are only materialized on accessibility demand
 
 CI enforces the renderer/design portions of this contract and JVM tests cover search ranking, geometry, and profile privacy policy.
