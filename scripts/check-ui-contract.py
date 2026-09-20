@@ -186,7 +186,7 @@ for required in (
     if required not in build_results:
         errors.append(f"Explicit structured intent must retain result priority: missing {required}")
 
-app_emit = build_results.find("for (AppEntry app : appMatches)")
+app_emit = build_results.rfind("for (AppEntry app : appMatches)")
 for structured in (
     "results.add(SearchResult.calculation",
     "results.add(SearchResult.timer",
