@@ -78,6 +78,24 @@ default HOME can make Android restart it before the intended cold-start sample.
 Restore the original HOME selection after measurements.
 
 On vendor firmware, a test can stall even while instrumentation remains active.
+
+For the Android 16 / Infinix X6855 controller-freezer investigation, read
+[`INFINIX_FREEZER_RESEARCH.md`](INFINIX_FREEZER_RESEARCH.md) first. It records
+the AOSP semantics, ruled-out false leads, XOS evidence, measurement caveats,
+and the reversible workaround order.
+
+The repository also provides:
+
+```sh
+bash scripts/infinix-freezer-session.sh status
+bash scripts/infinix-freezer-session.sh verify
+bash scripts/infinix-freezer-session.sh sticky
+```
+
+Do not use its device-wide `disable --yes` mode until the same live controller
+PID has been tested with sticky unfreeze and the research doc's safeguards are
+understood.
+
 Inspect the harness PID and its cgroup state before declaring a timeout:
 
 ```sh
