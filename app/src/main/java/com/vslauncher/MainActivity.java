@@ -1642,10 +1642,23 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             applyUiConfiguration();
             refreshAliasCache();
             refreshVisibleApps();
+            repinConfiguredShortcuts();
             resolveLauncherConfiguration();
             Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
         } catch (Exception error) {
             Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void repinConfiguredShortcuts() {
+        HashSet<String> handled = new HashSet<>();
+        for (int i = 0; i < LauncherPreferences.MAX_HOME_APPS; i++) {
+            String shortcutId = launcherPreferences.homeShortcutId(i);
+            String component = launcherPreferences.homeSlot(i);
+            if (shortcutId == null || component == null || !handled.add(component)) continue;
+
+            AppEntry app = findApp(component);
+            if (app != null) repinPackageShortcuts(app);
         }
     }
 
