@@ -83,6 +83,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private Map<String, String> normalizedAliases = Collections.emptyMap();
     private Map<String, String> aliasInitials = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<SearchResult> searchResults = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
@@ -329,7 +330,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
         apps = Collections.unmodifiableList(visible);
         filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, filteredApps);
         surface.setApps(apps, filteredApps);
+        surface.setSearchResults(searchResults);
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -603,8 +606,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         normalizedAliases,
                         aliasInitials
                 );
+                searchResults = buildSearchResults(query, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                scheduleSingleResultLaunch(query, filteredApps);
+                surface.setSearchResults(searchResults);
+                scheduleSingleResultLaunch(query, searchResults);
             }
 
             @Override public void afterTextChanged(Editable s) {
@@ -617,8 +622,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     && event.getAction() == android.view.KeyEvent.ACTION_UP)) {
                 return false;
             }
-            if (!filteredApps.isEmpty()) {
-                launchApp(filteredApps.get(0));
+            if (!searchResults.isEmpty()) {
+                executeSearchResult(searchResults.get(0));
                 return true;
             }
             return false;
@@ -662,7 +667,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             query = "";
             surface.setSearchActive(false);
             filteredApps = apps;
+            searchResults = Collections.emptyList();
             surface.setFilteredApps(filteredApps);
+            surface.setSearchResults(searchResults);
             return;
         }
 
@@ -675,25 +682,161 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         query = "";
         surface.setSearchActive(false);
         filteredApps = apps;
+        searchResults = Collections.emptyList();
         surface.setFilteredApps(filteredApps);
+        surface.setSearchResults(searchResults);
     }
 
-    private void scheduleSingleResultLaunch(String currentQuery, List<AppEntry> currentResults) {
+    private List<SearchResult> buildSearchResults(
+            String rawQuery,
+            List<AppEntry> appMatches
+    ) {
+        ArrayList<SearchResult> results = new ArrayList<>(
+                appMatches.size() + 6
+        );
+        for (AppEntry app : appMatches) results.add(SearchResult.app(app));
+
+        if (!SearchNormalization.normalize(rawQuery).isEmpty()) {
+            for (SearchCommand command : SearchCommand.matching(rawQuery)) {
+                results.add(SearchResult.command(command));
+            }
+
+            String dial = QueryActions.dialPayload(rawQuery);
+            if (dial != null) results.add(SearchResult.dial(dial));
+
+            String url = QueryActions.urlPayload(rawQuery);
+            if (url != null) results.add(SearchResult.url(url));
+        }
+
+        return results.isEmpty()
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(results);
+    }
+
+    private void executeSearchResult(SearchResult result) {
+        if (result == null) return;
         cancelPendingSingleResultLaunch();
-        String normalizedQuery = currentQuery == null ? "" : currentQuery.trim();
+
+        if (result.isApp()) {
+            launchApp(result.app);
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_DIAL) {
+            launchExternalIntent(new Intent(
+                    Intent.ACTION_DIAL,
+                    Uri.fromParts("tel", result.payload, null)
+            ));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_URL) {
+            launchExternalIntent(new Intent(Intent.ACTION_VIEW, Uri.parse(result.payload)));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_COMMAND) {
+            executeSystemCommand(result.id);
+        }
+    }
+
+    private void executeSystemCommand(String id) {
+        switch (id) {
+            case SearchCommand.WIFI:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_WIFI : null,
+                        Settings.ACTION_WIFI_SETTINGS
+                );
+                break;
+            case SearchCommand.INTERNET:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_INTERNET_CONNECTIVITY : null,
+                        Settings.ACTION_WIRELESS_SETTINGS
+                );
+                break;
+            case SearchCommand.VOLUME:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_VOLUME : null,
+                        Settings.ACTION_SOUND_SETTINGS
+                );
+                break;
+            case SearchCommand.NFC:
+                launchSettingsPanelOrFallback(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                                ? Settings.Panel.ACTION_NFC : null,
+                        Settings.ACTION_NFC_SETTINGS
+                );
+                break;
+            case SearchCommand.BLUETOOTH:
+                launchExternalIntent(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                break;
+            case SearchCommand.BATTERY:
+                onBatteryTapped();
+                break;
+            case SearchCommand.SETTINGS:
+                launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
+                break;
+            case SearchCommand.LAUNCHER_SETTINGS:
+                showPage(LauncherSurface.PAGE_SETTINGS);
+                break;
+            case SearchCommand.ALARMS:
+                onClockTapped();
+                break;
+            case SearchCommand.CALENDAR:
+                onDateTapped();
+                break;
+            case SearchCommand.STORAGE:
+                launchExternalIntent(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS));
+                break;
+            case SearchCommand.KEYBOARD:
+                launchExternalIntent(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
+                break;
+            case SearchCommand.DISPLAY:
+                launchExternalIntent(new Intent(Settings.ACTION_DISPLAY_SETTINGS));
+                break;
+            case SearchCommand.SOUND:
+                launchExternalIntent(new Intent(Settings.ACTION_SOUND_SETTINGS));
+                break;
+            case SearchCommand.LOCATION:
+                launchExternalIntent(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                break;
+            case SearchCommand.NOTIFICATIONS:
+                launchExternalIntent(new Intent(Settings.ACTION_NOTIFICATION_SETTINGS));
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void launchSettingsPanelOrFallback(String panelAction, String fallbackAction) {
+        if (panelAction != null && launchExternalIntent(new Intent(panelAction))) return;
+        launchExternalIntent(new Intent(fallbackAction));
+    }
+
+    private void scheduleSingleResultLaunch(
+            String currentQuery,
+            List<SearchResult> currentResults
+    ) {
+        cancelPendingSingleResultLaunch();
+        String normalizedQuery = SearchNormalization.normalize(currentQuery);
         if (normalizedQuery.isEmpty() || currentResults.size() != 1) return;
 
-        AppEntry only = currentResults.get(0);
+        SearchResult only = currentResults.get(0);
+        if (!only.isApp()) return;
+
         pendingSingleResultLaunch = () -> {
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
-                    || !normalizedQuery.equals(query.trim())
-                    || filteredApps.size() != 1
-                    || filteredApps.get(0) != only) {
+                    || !normalizedQuery.equals(SearchNormalization.normalize(query))
+                    || searchResults.size() != 1
+                    || searchResults.get(0) != only) {
                 return;
             }
-            launchApp(only);
+            launchApp(only.app);
         };
         mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
     }
@@ -710,6 +853,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onOpenApp(AppEntry app) {
         launchApp(app);
+    }
+
+    @Override public void onSearchResultTapped(SearchResult result) {
+        executeSearchResult(result);
     }
 
     @Override public void onHomeSlotLongPressed(int index) {
