@@ -8,6 +8,7 @@ SURFACE = ROOT / "app/src/main/java/com/vslauncher/LauncherSurface.java"
 MAIN = ROOT / "app/src/main/java/com/vslauncher/MainActivity.java"
 TOKENS = ROOT / "app/src/main/java/com/vslauncher/DesignTokens.java"
 APP_GRADLE = ROOT / "app/build.gradle"
+STYLES = ROOT / "app/src/main/res/values/styles.xml"
 MAIN_SRC = ROOT / "app/src/main/java"
 
 errors = []
@@ -39,6 +40,7 @@ surface = SURFACE.read_text(encoding="utf-8")
 main = MAIN.read_text(encoding="utf-8")
 tokens = TOKENS.read_text(encoding="utf-8")
 gradle = APP_GRADLE.read_text(encoding="utf-8")
+styles = STYLES.read_text(encoding="utf-8")
 
 hot_methods = [
     "onDraw",
@@ -91,6 +93,8 @@ for name, argb in token_values.items():
         errors.append(f"DesignTokens must remain monochrome; {name} is not neutral gray")
 if token_values.get("BLACK") != 0xFF000000:
     errors.append("Launcher background must remain absolute black")
+if "#FFFFFF" in styles.upper():
+    errors.append("Native themes must not reintroduce pure-white UI chrome")
 for required_token in (
     "FOCUS",
     "TEXT_PRIMARY",
