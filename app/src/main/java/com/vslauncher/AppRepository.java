@@ -206,48 +206,39 @@ final class AppRepository {
     static List<AppEntry> filter(
             List<AppEntry> source,
             String query,
-            Map<String, String> normalizedAliases
+            Map<String, String> normalizedAliases,
+            Map<String, String> aliasInitials
     ) {
         String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) return source;
 
-        ArrayList<AppEntry> canonicalPrefix = new ArrayList<>();
-        ArrayList<AppEntry> aliasPrefix = new ArrayList<>();
-        ArrayList<AppEntry> canonicalSubstring = new ArrayList<>();
-        ArrayList<AppEntry> aliasSubstring = new ArrayList<>();
+        @SuppressWarnings("unchecked")
+        ArrayList<AppEntry>[] buckets = new ArrayList[8];
+        for (int i = 0; i < buckets.length; i++) buckets[i] = new ArrayList<>();
 
         for (AppEntry app : source) {
             String alias = normalizedAliases == null
                     ? null
                     : normalizedAliases.get(app.componentKey);
+            String initials = aliasInitials == null
+                    ? null
+                    : aliasInitials.get(app.componentKey);
 
-            switch (SearchRanking.rank(app.normalizedLabel, alias, normalized)) {
-                case SearchRanking.CANONICAL_PREFIX:
-                    canonicalPrefix.add(app);
-                    break;
-                case SearchRanking.ALIAS_PREFIX:
-                    aliasPrefix.add(app);
-                    break;
-                case SearchRanking.CANONICAL_SUBSTRING:
-                    canonicalSubstring.add(app);
-                    break;
-                case SearchRanking.ALIAS_SUBSTRING:
-                    aliasSubstring.add(app);
-                    break;
-                default:
-                    break;
-            }
+            int rank = SearchRanking.rank(
+                    app.normalizedLabel,
+                    alias,
+                    app.searchInitials,
+                    initials,
+                    normalized
+            );
+            if (rank >= 0) buckets[rank].add(app);
         }
 
-        int total = canonicalPrefix.size()
-                + aliasPrefix.size()
-                + canonicalSubstring.size()
-                + aliasSubstring.size();
+        int total = 0;
+        for (ArrayList<AppEntry> bucket : buckets) total += bucket.size();
+
         ArrayList<AppEntry> matches = new ArrayList<>(total);
-        matches.addAll(canonicalPrefix);
-        matches.addAll(aliasPrefix);
-        matches.addAll(canonicalSubstring);
-        matches.addAll(aliasSubstring);
+        for (ArrayList<AppEntry> bucket : buckets) matches.addAll(bucket);
         return matches;
     }
 
