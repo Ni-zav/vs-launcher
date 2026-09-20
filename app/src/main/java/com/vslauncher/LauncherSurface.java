@@ -59,6 +59,11 @@ final class LauncherSurface extends View {
         void onWeatherTapped();
     }
 
+    private static final String[] ALPHABET_LABELS = {
+            "A","B","C","D","E","F","G","H","I","J","K","L","M",
+            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
+    };
+
     private static final int GESTURE_NONE = 0;
     private static final int GESTURE_HORIZONTAL = 1;
     private static final int GESTURE_VERTICAL = 2;
@@ -72,6 +77,8 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
     private final Paint labelPaint =
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint alphabetPaint =
+            textPaint(9f, DesignTokens.TEXT_PRIMARY, DesignTokens.LABEL);
     private final Paint appPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint appInversePaint =
@@ -172,6 +179,14 @@ final class LauncherSurface extends View {
     private float settingsScroll;
     private int hiddenAppCount;
     private boolean searchActive;
+    private final int[] alphabetFirstIndex = new int[26];
+    private final float[] alphabetWidths = new float[26];
+    private boolean alphabetScrubbing;
+    private int alphabetActiveIndex = -1;
+    private float alphabetTouchLeftPx;
+    private float alphabetRailX;
+    private float alphabetStepPx;
+    private float alphabetFirstBaselinePx;
     private float downX;
     private float downY;
     private float lastY;
@@ -238,6 +253,11 @@ final class LauncherSurface extends View {
         batteryStrokePaint.setStrokeCap(Paint.Cap.ROUND);
         batteryStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
 
+        java.util.Arrays.fill(alphabetFirstIndex, -1);
+        for (int i = 0; i < ALPHABET_LABELS.length; i++) {
+            alphabetWidths[i] = alphabetPaint.measureText(ALPHABET_LABELS[i]);
+        }
+
         statusStrokePaint.setStyle(Paint.Style.STROKE);
         statusStrokePaint.setStrokeWidth(dp(1.2f));
         statusStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
@@ -301,6 +321,7 @@ final class LauncherSurface extends View {
         apps = all == null ? Collections.emptyList() : all;
         filteredApps = filtered == null ? apps : filtered;
         updateAppCountCache();
+        refreshAlphabetIndex();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         invalidate();
     }
@@ -308,6 +329,7 @@ final class LauncherSurface extends View {
     void setFilteredApps(List<AppEntry> filtered) {
         filteredApps = filtered == null ? apps : filtered;
         updateAppCountCache();
+        refreshAlphabetIndex();
         appScroll = 0f;
         scroller.abortAnimation();
         if (page == PAGE_APPS) invalidate();
@@ -316,6 +338,18 @@ final class LauncherSurface extends View {
     private void updateAppCountCache() {
         appCountText = Integer.toString(filteredApps.size());
         appCountWidth = labelPaint.measureText(appCountText);
+    }
+
+    private void refreshAlphabetIndex() {
+        java.util.Arrays.fill(alphabetFirstIndex, -1);
+        for (int index = 0; index < filteredApps.size(); index++) {
+            String normalized = filteredApps.get(index).normalizedLabel;
+            if (normalized.isEmpty()) continue;
+            char first = Character.toUpperCase(normalized.charAt(0));
+            if (first < 'A' || first > 'Z') continue;
+            int bucket = first - 'A';
+            if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = index;
+        }
     }
 
     void setSearchActive(boolean active) {
@@ -476,6 +510,11 @@ final class LauncherSurface extends View {
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
         appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
+        alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
+        alphabetRailX = Math.max(0f, getWidth() - dp(8f));
+        alphabetStepPx = Math.max(dp(10f),
+                (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length);
+        alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
 
         dividerThicknessPx = dp(1f);
         timeBaselinePx = contentTopPx + dp(58f);
@@ -701,6 +740,30 @@ final class LauncherSurface extends View {
                 listStart,
                 listBottom
         );
+
+        if (!searchActive) drawAlphabetRail(canvas);
+    }
+
+    private void drawAlphabetRail(Canvas canvas) {
+        for (int i = 0; i < ALPHABET_LABELS.length; i++) {
+            float baseline = alphabetFirstBaselinePx + i * alphabetStepPx;
+            canvas.drawText(
+                    ALPHABET_LABELS[i],
+                    alphabetRailX - alphabetWidths[i],
+                    baseline,
+                    alphabetPaint
+            );
+        }
+
+        if (alphabetScrubbing && alphabetActiveIndex >= 0) {
+            String active = ALPHABET_LABELS[alphabetActiveIndex];
+            canvas.drawText(
+                    active,
+                    rightPx - alphabetWidths[alphabetActiveIndex],
+                    appsViewportTopPx + dp(34f),
+                    titlePaint
+            );
+        }
     }
 
     private void drawAppRows(
@@ -903,6 +966,17 @@ final class LauncherSurface extends View {
                 gestureMode = GESTURE_NONE;
                 longPressTriggered = false;
 
+                if (page == PAGE_APPS
+                        && !searchActive
+                        && downX >= alphabetTouchLeftPx
+                        && downY >= appsViewportTopPx
+                        && downY < appsViewportBottomPx) {
+                    alphabetScrubbing = true;
+                    host.onAppsBrowseGestureStarted();
+                    updateAlphabetScrub(downY);
+                    return true;
+                }
+
                 pressedHomeIndex = page == PAGE_HOME
                         ? homeIndexAt(downX, downY)
                         : -1;
@@ -921,6 +995,10 @@ final class LauncherSurface extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (alphabetScrubbing) {
+                    updateAlphabetScrub(event.getY());
+                    return true;
+                }
                 if (velocityTracker != null) velocityTracker.addMovement(event);
 
                 float totalDx = event.getX() - downX;
@@ -960,6 +1038,13 @@ final class LauncherSurface extends View {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (alphabetScrubbing) {
+                    alphabetScrubbing = false;
+                    alphabetActiveIndex = -1;
+                    invalidate();
+                    recycleVelocityTracker();
+                    return true;
+                }
                 cancelPendingLongPress();
 
                 if (velocityTracker != null) velocityTracker.addMovement(event);
@@ -1075,6 +1160,35 @@ final class LauncherSurface extends View {
         if (dy < -gestureThresholdPx) {
             host.onQuickLaunchRequested();
         }
+    }
+
+    private void updateAlphabetScrub(float y) {
+        if (alphabetStepPx <= 0f) return;
+        int requested = (int) ((y - appsViewportTopPx) / alphabetStepPx);
+        requested = Math.max(0, Math.min(ALPHABET_LABELS.length - 1, requested));
+
+        int actual = nearestAlphabetIndex(requested);
+        alphabetActiveIndex = actual >= 0 ? actual : requested;
+        if (actual >= 0) {
+            int row = alphabetFirstIndex[actual];
+            appScroll = clamp(row * rowHeightPx, 0f, maxAppScroll());
+        }
+        postInvalidateOnAnimation();
+    }
+
+    private int nearestAlphabetIndex(int requested) {
+        if (alphabetFirstIndex[requested] >= 0) return requested;
+        for (int distance = 1; distance < ALPHABET_LABELS.length; distance++) {
+            int forward = requested + distance;
+            if (forward < ALPHABET_LABELS.length && alphabetFirstIndex[forward] >= 0) {
+                return forward;
+            }
+            int backward = requested - distance;
+            if (backward >= 0 && alphabetFirstIndex[backward] >= 0) {
+                return backward;
+            }
+        }
+        return -1;
     }
 
     @Override public void computeScroll() {
