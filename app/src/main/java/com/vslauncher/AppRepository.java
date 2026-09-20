@@ -23,7 +23,7 @@ import java.util.concurrent.Executors;
 
 final class AppRepository {
     interface Callback {
-        void onLoaded(List<AppEntry> apps);
+        void onLoaded(List<AppEntry> apps, List<LauncherProfile> profiles);
     }
 
     interface ShortcutsCallback {
@@ -49,11 +49,18 @@ final class AppRepository {
     void load(Callback callback) {
         executor.execute(() -> {
             ArrayList<AppEntry> result = new ArrayList<>();
+            ArrayList<LauncherProfile> profiles = new ArrayList<>();
             if (launcherApps != null && userManager != null) {
                 try {
                     for (UserHandle user : launcherApps.getProfiles()) {
                         int kind = profileKind(user);
                         long serial = userManager.getSerialNumberForUser(user);
+                        boolean quiet = kind != AppEntry.PROFILE_PERSONAL && quietMode(user);
+                        profiles.add(new LauncherProfile(user, serial, kind, quiet));
+
+                        // Quiet work/private profiles expose the container but never apps/search.
+                        if (quiet) continue;
+
                         List<LauncherActivityInfo> activities;
                         try {
                             activities = launcherApps.getActivityList(null, user);
@@ -95,8 +102,17 @@ final class AppRepository {
                     .thenComparing(app -> app.component.getPackageName()));
 
             List<AppEntry> immutable = Collections.unmodifiableList(result);
-            main.post(() -> callback.onLoaded(immutable));
+            List<LauncherProfile> immutableProfiles = Collections.unmodifiableList(profiles);
+            main.post(() -> callback.onLoaded(immutable, immutableProfiles));
         });
+    }
+
+    private boolean quietMode(UserHandle user) {
+        try {
+            return userManager != null && userManager.isQuietModeEnabled(user);
+        } catch (IllegalArgumentException | SecurityException error) {
+            return false;
+        }
     }
 
     private int profileKind(UserHandle user) {
@@ -191,7 +207,7 @@ final class AppRepository {
     }
 
     boolean isQuietModeEnabled(UserHandle user) {
-        return userManager != null && userManager.isQuietModeEnabled(user);
+        return quietMode(user);
     }
 
     boolean requestQuietMode(boolean enabled, UserHandle user) {
