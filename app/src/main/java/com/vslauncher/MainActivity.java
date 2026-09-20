@@ -11,8 +11,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -570,13 +568,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
         search.setHintTextColor(DesignTokens.TEXT_TERTIARY);
-        search.setHint("Search apps");
+        search.setHint("Search");
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.SEARCH_SP);
         search.setTypeface(DesignTokens.BODY);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         search.setImeOptions(EditorInfo.IME_ACTION_GO);
-        search.setBackground(searchBackground());
-        search.setPadding(dp(18f), 0, dp(18f), 0);
+        search.setBackground(null);
+        search.setPadding(dp(8f), 0, dp(8f), 0);
         search.setContentDescription("Search all apps");
 
         if (!query.isEmpty()) {
@@ -637,7 +635,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private FrameLayout.LayoutParams searchLayoutParams() {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(56f),
+                dp(48f),
                 Gravity.BOTTOM
         );
         params.setMargins(dp(16f), 0, dp(16f), dp(12f) + bottomInset);
@@ -695,24 +693,6 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (pendingSingleResultLaunch == null) return;
         mainHandler.removeCallbacks(pendingSingleResultLaunch);
         pendingSingleResultLaunch = null;
-    }
-
-    private StateListDrawable searchBackground() {
-        StateListDrawable states = new StateListDrawable();
-        states.addState(
-                new int[] { android.R.attr.state_focused },
-                searchField(DesignTokens.FOCUS)
-        );
-        states.addState(new int[] {}, searchField(DesignTokens.DIVIDER));
-        return states;
-    }
-
-    private GradientDrawable searchField(int strokeColor) {
-        GradientDrawable field = new GradientDrawable();
-        field.setColor(Color.BLACK);
-        field.setCornerRadius(dp(DesignTokens.CORNER_DP));
-        field.setStroke(dp(1f), strokeColor);
-        return field;
     }
 
     @Override public void onPageRequested(int page) {
@@ -1017,8 +997,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         String component = app.componentKey;
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setTextColor(DesignTokens.WHITE);
-        input.setHintTextColor(DesignTokens.WHITE);
+        input.setTextColor(DesignTokens.TEXT_PRIMARY);
+        input.setHintTextColor(DesignTokens.TEXT_TERTIARY);
         input.setBackgroundColor(DesignTokens.BLACK);
         input.setHint(app.label);
         String existing = launcherPreferences.alias(component);
