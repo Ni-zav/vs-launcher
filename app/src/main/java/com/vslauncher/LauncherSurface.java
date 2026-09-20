@@ -56,7 +56,10 @@ final class LauncherSurface extends View {
         void onQuickLaunchRequested();
         void onAppsBrowseGestureStarted();
         void onSettingAction(int action);
+        void onClockTapped();
+        void onDateTapped();
         void onWeatherTapped();
+        void onBatteryTapped();
     }
 
     private static final String[] ALPHABET_LABELS = {
@@ -1221,10 +1224,7 @@ final class LauncherSurface extends View {
         float top = contentTop();
 
         if (page == PAGE_HOME) {
-            if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-                host.onWeatherTapped();
-                return;
-            }
+            if (handleStatusTap(x, y)) return;
 
             int index = homeIndexAt(x, y);
             if (index >= 0 && index < homeApps.size()) {
@@ -1249,6 +1249,52 @@ final class LauncherSurface extends View {
 
         int settingsIndex = settingsIndexAt(x, y);
         if (settingsIndex >= 0) handleSettingsRow(settingsIndex);
+    }
+
+    private boolean handleStatusTap(float x, float y) {
+        float top = contentTopPx;
+        float midpoint = getWidth() * 0.5f;
+
+        if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
+            if (uiConfig.showBattery && x >= midpoint) {
+                host.onBatteryTapped();
+                return true;
+            }
+            if (uiConfig.showWeather) {
+                host.onWeatherTapped();
+                return true;
+            }
+        }
+
+        if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && y >= top && y < top + dp(38f)) {
+                host.onDateTapped();
+                return true;
+            }
+            if (uiConfig.showTime && y >= top + dp(38f) && y < top + dp(104f)) {
+                host.onClockTapped();
+                return true;
+            }
+        } else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && x >= midpoint && y >= top && y < top + dp(42f)) {
+                host.onDateTapped();
+                return true;
+            }
+            if (uiConfig.showTime && x < midpoint && y >= top && y < top + dp(78f)) {
+                host.onClockTapped();
+                return true;
+            }
+        } else {
+            if (uiConfig.showTime && y >= top && y < top + dp(70f)) {
+                host.onClockTapped();
+                return true;
+            }
+            if (uiConfig.showDate && y >= top + dp(70f) && y < top + dp(106f)) {
+                host.onDateTapped();
+                return true;
+            }
+        }
+        return false;
     }
 
     private void handleSettingsRow(int index) {
