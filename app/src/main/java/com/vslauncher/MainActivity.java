@@ -77,6 +77,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private List<AppEntry> allApps = Collections.emptyList();
     private List<AppEntry> apps = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
+    private Map<String, String> aliases = Collections.emptyMap();
+    private Map<String, String> normalizedAliases = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
@@ -115,6 +117,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
         launcherPreferences = new LauncherPreferences(this);
         uiConfig = LauncherUiConfig.from(launcherPreferences);
+        refreshAliasCache();
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DesignTokens.BLACK);
@@ -271,7 +274,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             allApps = loaded;
             HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
             for (AppEntry app : loaded) {
-                index.put(app.component.flattenToString(), app);
+                index.put(app.componentKey, app);
             }
             appByComponent = Collections.unmodifiableMap(index);
             refreshVisibleApps();
@@ -279,14 +282,28 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         });
     }
 
+    private void refreshAliasCache() {
+        Map<String, String> loaded = launcherPreferences.aliases();
+        aliases = loaded;
+
+        HashMap<String, String> normalized = new HashMap<>(Math.max(16, loaded.size() * 2));
+        for (Map.Entry<String, String> entry : loaded.entrySet()) {
+            String value = entry.getValue();
+            if (value == null) continue;
+            String clean = value.trim().toLowerCase(Locale.ROOT);
+            if (!clean.isEmpty()) normalized.put(entry.getKey(), clean);
+        }
+        normalizedAliases = Collections.unmodifiableMap(normalized);
+    }
+
     private void refreshVisibleApps() {
         Set<String> hidden = launcherPreferences.hiddenComponents();
         ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
         for (AppEntry app : allApps) {
-            if (!hidden.contains(app.component.flattenToString())) visible.add(app);
+            if (!hidden.contains(app.componentKey)) visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filter(apps, query, launcherPreferences.aliases());
+        filteredApps = AppRepository.filter(apps, query, normalizedAliases);
         surface.setApps(apps, filteredApps);
         surface.setHiddenAppCount(hidden.size());
     }
@@ -305,15 +322,15 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
                 entry = firstUnusedApp(used);
                 if (entry != null) {
-                    launcherPreferences.setHomeSlot(index, entry.component.flattenToString());
+                    launcherPreferences.setHomeSlot(index, entry.componentKey);
                 }
             }
 
             resolved.add(entry);
             if (entry != null) {
-                String component = entry.component.flattenToString();
-                String alias = launcherPreferences.alias(component);
-                labels.add(alias.isEmpty() ? entry.label : alias);
+                String component = entry.componentKey;
+                String alias = aliases.get(component);
+                labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
                 used.add(component);
             } else {
                 labels.add("");
@@ -343,7 +360,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry firstUnusedApp(Set<String> used) {
         for (AppEntry app : apps) {
-            String component = app.component.flattenToString();
+            String component = app.componentKey;
             if (!used.contains(component)) return app;
         }
         return null;
@@ -470,7 +487,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 filteredApps = AppRepository.filter(
                         apps,
                         query,
-                        launcherPreferences.aliases()
+                        normalizedAliases
                 );
                 surface.setFilteredApps(filteredApps);
             }
@@ -572,7 +589,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             showAddToHomeSlotPicker(app);
                             break;
                         case 1:
-                            launcherPreferences.setHidden(app.component.flattenToString(), true);
+                            launcherPreferences.setHidden(app.componentKey, true);
                             refreshVisibleApps();
                             resolveLauncherConfiguration();
                             break;
@@ -776,7 +793,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     AppEntry selected = allApps.get(which);
                     launcherPreferences.setHomeSlot(
                             slot,
-                            selected.component.flattenToString()
+                            selected.componentKey
                     );
                     resolveLauncherConfiguration();
                 })
@@ -788,7 +805,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         AppEntry app = slot < homeApps.size() ? homeApps.get(slot) : null;
         if (app == null) return;
 
-        String component = app.component.flattenToString();
+        String component = app.componentKey;
         EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setTextColor(DesignTokens.WHITE);
@@ -806,11 +823,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setView(input)
                 .setPositiveButton("Save", (dialog, which) -> {
                     launcherPreferences.setAlias(component, input.getText().toString());
+                    refreshAliasCache();
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })
                 .setNeutralButton("Reset", (dialog, which) -> {
                     launcherPreferences.setAlias(component, "");
+                    refreshAliasCache();
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })
@@ -831,7 +850,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setItems(slots, (dialog, which) -> {
                     launcherPreferences.setHomeSlot(
                             which,
-                            app.component.flattenToString()
+                            app.componentKey
                     );
                     resolveLauncherConfiguration();
                 })
@@ -865,7 +884,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
                     AppEntry selected = allApps.get(which);
-                    launcherPreferences.setQuickApp(selected.component.flattenToString());
+                    launcherPreferences.setQuickApp(selected.componentKey);
                     resolveLauncherConfiguration();
                 })
                 .setNeutralButton("Clear", (picker, which) -> {
@@ -940,7 +959,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         for (int i = 0; i < allApps.size(); i++) {
             AppEntry app = allApps.get(i);
             labels[i] = app.label;
-            checked[i] = launcherPreferences.isHidden(app.component.flattenToString());
+            checked[i] = launcherPreferences.isHidden(app.componentKey);
         }
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
@@ -948,7 +967,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
                     AppEntry app = allApps.get(which);
                     launcherPreferences.setHidden(
-                            app.component.flattenToString(),
+                            app.componentKey,
                             isChecked
                     );
                 })
@@ -1020,6 +1039,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     new String(output.toByteArray(), StandardCharsets.UTF_8)
             );
             applyUiConfiguration();
+            refreshAliasCache();
             refreshVisibleApps();
             resolveLauncherConfiguration();
             Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
