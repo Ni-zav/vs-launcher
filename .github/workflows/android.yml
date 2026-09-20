@@ -41,6 +41,9 @@ jobs:
           bash -n scripts/infinix-manual-profile.sh
           bash -n scripts/infinix-manual-ab.sh
           python3 -m py_compile scripts/analyze-startup.py
+          python3 -m py_compile scripts/check-ui-contract.py
+          bash -n scripts/check-apk-size.sh
+          python3 scripts/check-ui-contract.py
 
           cat > /tmp/startup-a.csv <<'EOF'
           iteration,total_time_ms,wait_time_ms,launch_state,status,timestamp
@@ -59,8 +62,14 @@ jobs:
           python3 scripts/analyze-startup.py             /tmp/startup-a.csv /tmp/startup-b.csv             --output /tmp/startup-comparison.md
           grep -q 'Median TotalTime' /tmp/startup-comparison.md
 
+      - name: JVM UI and search tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
       - name: Build and lint
         run: bash scripts/build-debug-apk.sh
+
+      - name: Check APK size budget
+        run: bash scripts/check-apk-size.sh
 
       - name: Compile performance test APKs
         run: |
