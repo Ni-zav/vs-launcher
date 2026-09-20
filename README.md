@@ -219,6 +219,10 @@ dist/VS-Launcher-0.9.1-debug.apk
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
 
+## License
+
+VS Launcher is licensed under the [Apache License, Version 2.0](LICENSE). See the license file for the terms covering reuse, modification, redistribution, and patent rights. Any separately packaged third-party libraries retain their own licenses.
+
 ## Architecture
 
 ```text
