@@ -465,6 +465,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void addSearch(boolean focus) {
+        surface.setSearchActive(true);
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
@@ -489,7 +490,6 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                surface.setSearchActive(!query.trim().isEmpty());
                 filteredApps = AppRepository.filter(
                         apps,
                         query,
