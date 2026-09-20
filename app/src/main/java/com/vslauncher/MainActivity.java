@@ -87,6 +87,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private int bottomInset;
     private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
+    private boolean appsBrowseMode;
+    private Runnable pendingSingleResultLaunch;
 
     private final Runnable clockTick = new Runnable() {
         @Override public void run() {
@@ -436,6 +438,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showPage(int target, boolean focusSearch) {
+        if (target != LauncherSurface.PAGE_APPS) appsBrowseMode = false;
         if (surface.getPage() == target) {
             if (target == LauncherSurface.PAGE_APPS && focusSearch) {
                 if (search == null) addSearch(true);
@@ -452,7 +455,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     ? 0L
                     : uiConfig.pageDurationMs() + 20L;
             mainHandler.postDelayed(() -> {
-                if (surface.getPage() == LauncherSurface.PAGE_APPS && search == null) {
+                if (surface.getPage() == LauncherSurface.PAGE_APPS
+                        && search == null
+                        && !appsBrowseMode) {
                     addSearch(focusSearch);
                 }
             }, delay);
@@ -468,7 +473,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.SEARCH_SP);
         search.setTypeface(DesignTokens.BODY);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        search.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        search.setImeOptions(EditorInfo.IME_ACTION_GO);
         search.setBackground(searchBackground());
         search.setPadding(dp(18f), 0, dp(18f), 0);
         search.setContentDescription("Search all apps");
@@ -491,10 +496,24 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         normalizedAliases
                 );
                 surface.setFilteredApps(filteredApps);
+                scheduleSingleResultLaunch(query, filteredApps);
             }
 
             @Override public void afterTextChanged(Editable s) {
             }
+        });
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_GO
+                    && !(event != null
+                    && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == android.view.KeyEvent.ACTION_UP)) {
+                return false;
+            }
+            if (!filteredApps.isEmpty()) {
+                launchApp(filteredApps.get(0));
+                return true;
+            }
+            return false;
         });
 
         root.addView(search, searchLayoutParams());
@@ -530,6 +549,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void removeSearch() {
+        cancelPendingSingleResultLaunch();
         if (search == null) {
             query = "";
             surface.setSearchActive(false);
@@ -548,6 +568,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setSearchActive(false);
         filteredApps = apps;
         surface.setFilteredApps(filteredApps);
+    }
+
+    private void scheduleSingleResultLaunch(String currentQuery, List<AppEntry> currentResults) {
+        cancelPendingSingleResultLaunch();
+        String normalizedQuery = currentQuery == null ? "" : currentQuery.trim();
+        if (normalizedQuery.isEmpty() || currentResults.size() != 1) return;
+
+        AppEntry only = currentResults.get(0);
+        pendingSingleResultLaunch = () -> {
+            pendingSingleResultLaunch = null;
+            if (search == null
+                    || surface.getPage() != LauncherSurface.PAGE_APPS
+                    || !normalizedQuery.equals(query.trim())
+                    || filteredApps.size() != 1
+                    || filteredApps.get(0) != only) {
+                return;
+            }
+            launchApp(only);
+        };
+        mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
+    }
+
+    private void cancelPendingSingleResultLaunch() {
+        if (pendingSingleResultLaunch == null) return;
+        mainHandler.removeCallbacks(pendingSingleResultLaunch);
+        pendingSingleResultLaunch = null;
     }
 
     private StateListDrawable searchBackground() {
@@ -569,7 +615,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onPageRequested(int page) {
-        showPage(page);
+        showPage(page, page == LauncherSurface.PAGE_APPS);
     }
 
     @Override public void onOpenApp(AppEntry app) {
@@ -739,8 +785,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
-    @Override public void onSearchGestureRequested() {
-        showPage(LauncherSurface.PAGE_APPS, true);
+    @Override public void onAppsBrowseGestureStarted() {
+        if (surface.getPage() != LauncherSurface.PAGE_APPS || appsBrowseMode) return;
+        appsBrowseMode = true;
+        removeSearch();
     }
 
     private void showHomeSlotMenu(int slot) {
