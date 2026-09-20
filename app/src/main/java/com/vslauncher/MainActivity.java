@@ -847,23 +847,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     ) {
         cancelPendingSingleResultLaunch();
         String normalizedQuery = SearchNormalization.normalize(currentQuery);
-        if (normalizedQuery.isEmpty() || currentResults.size() != 1) return;
+        if (normalizedQuery.isEmpty()) return;
 
-        SearchResult only = currentResults.get(0);
-        if (!only.isApp()) return;
+        SearchResult onlyApp = singleAppResult(currentResults);
+        if (onlyApp == null) return;
 
         pendingSingleResultLaunch = () -> {
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
                     || !normalizedQuery.equals(SearchNormalization.normalize(query))
-                    || searchResults.size() != 1
-                    || searchResults.get(0) != only) {
+                    || singleAppResult(searchResults) != onlyApp) {
                 return;
             }
-            launchApp(only.app);
+            launchApp(onlyApp.app);
         };
         mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
+    }
+
+    private static SearchResult singleAppResult(List<SearchResult> results) {
+        SearchResult only = null;
+        for (SearchResult result : results) {
+            if (!result.isApp()) continue;
+            if (only != null) return null;
+            only = result;
+        }
+        return only;
     }
 
     private void cancelPendingSingleResultLaunch() {
