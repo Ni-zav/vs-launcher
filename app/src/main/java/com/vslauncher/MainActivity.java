@@ -484,6 +484,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
+                surface.setSearchActive(!query.trim().isEmpty());
                 filteredApps = AppRepository.filter(
                         apps,
                         query,
@@ -531,6 +532,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private void removeSearch() {
         if (search == null) {
             query = "";
+            surface.setSearchActive(false);
             filteredApps = apps;
             surface.setFilteredApps(filteredApps);
             return;
@@ -543,6 +545,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.removeView(search);
         search = null;
         query = "";
+        surface.setSearchActive(false);
         filteredApps = apps;
         surface.setFilteredApps(filteredApps);
     }
