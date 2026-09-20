@@ -120,14 +120,24 @@ final class AppRepository {
         return AppEntry.PROFILE_WORK;
     }
 
-    void startApp(AppEntry app) {
-        if (app == null || launcherApps == null) return;
-        launcherApps.startMainActivity(app.component, app.user, null, null);
+    boolean startApp(AppEntry app) {
+        if (app == null || launcherApps == null) return false;
+        try {
+            launcherApps.startMainActivity(app.component, app.user, null, null);
+            return true;
+        } catch (IllegalStateException | SecurityException error) {
+            return false;
+        }
     }
 
-    void startAppDetails(AppEntry app) {
-        if (app == null || launcherApps == null) return;
-        launcherApps.startAppDetailsActivity(app.component, app.user, null, null);
+    boolean startAppDetails(AppEntry app) {
+        if (app == null || launcherApps == null) return false;
+        try {
+            launcherApps.startAppDetailsActivity(app.component, app.user, null, null);
+            return true;
+        } catch (IllegalStateException | SecurityException error) {
+            return false;
+        }
     }
 
     boolean canUseShortcuts() {
@@ -164,15 +174,20 @@ final class AppRepository {
         });
     }
 
-    void startShortcut(AppEntry app, ShortcutInfo shortcut) {
-        if (app == null || shortcut == null || launcherApps == null) return;
-        launcherApps.startShortcut(
-                app.component.getPackageName(),
-                shortcut.getId(),
-                null,
-                null,
-                app.user
-        );
+    boolean startShortcut(AppEntry app, ShortcutInfo shortcut) {
+        if (app == null || shortcut == null || launcherApps == null) return false;
+        try {
+            launcherApps.startShortcut(
+                    app.component.getPackageName(),
+                    shortcut.getId(),
+                    null,
+                    null,
+                    app.user
+            );
+            return true;
+        } catch (IllegalStateException | SecurityException error) {
+            return false;
+        }
     }
 
     boolean isQuietModeEnabled(UserHandle user) {
