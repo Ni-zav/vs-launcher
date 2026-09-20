@@ -18,6 +18,32 @@ Do not declare a device test PASS from compilation alone.
 
 ---
 
+## Codex retry entrypoint
+
+For the Android 16 / Infinix X6855 Macrobenchmark freezer retry, use the repository-stored goal:
+
+- [CODEX_INFINIX_RETRY_GOAL.md](CODEX_INFINIX_RETRY_GOAL.md)
+
+The retry runner separates controller-survivability/profile capture from real timing:
+
+```sh
+bash scripts/infinix-codex-retry.sh preflight
+bash scripts/infinix-codex-retry.sh sticky-profile startup
+bash scripts/infinix-codex-retry.sh sticky-profile journeys
+
+# survivability probe only; timing is not valid evidence
+bash scripts/infinix-codex-retry.sh sticky-probe cold
+
+# final unmonitored measurements
+bash scripts/infinix-codex-retry.sh measure cold
+bash scripts/infinix-codex-retry.sh measure profile
+```
+
+Use `scripts/infinix-freezer-session.sh disable --yes` only after the exact-PID
+sticky path has failed as described in `INFINIX_FREEZER_RESEARCH.md`.
+
+---
+
 ## 1. Safety rules
 
 1. **Never automatically uninstall `com.vslauncher`.**

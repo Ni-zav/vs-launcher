@@ -33,6 +33,12 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      - name: Validate shell helpers
+        run: |
+          bash -n scripts/infinix-adb-smoke.sh
+          bash -n scripts/infinix-freezer-session.sh
+          bash -n scripts/infinix-codex-retry.sh
+
       - name: Build and lint
         run: bash scripts/build-debug-apk.sh
 
