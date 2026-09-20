@@ -739,7 +739,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
             if (timer != null) results.add(SearchResult.timer(timer));
 
-            TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarm(rawQuery);
+            TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
             if (alarm != null) results.add(SearchResult.alarm(alarm));
 
             String calculation = CalculatorAction.evaluate(rawQuery);

@@ -56,7 +56,11 @@ final class TimeQueryActions {
     }
 
     static AlarmSpec alarm(String raw) {
-        String normalized = SearchNormalization.normalize(raw);
+        return alarmNormalized(SearchNormalization.normalize(raw));
+    }
+
+    static AlarmSpec alarmNormalized(String normalized) {
+        if (normalized == null) return null;
         if (normalized.startsWith("set alarm ")) {
             normalized = normalized.substring(10).trim();
         } else if (normalized.startsWith("alarm ")) {

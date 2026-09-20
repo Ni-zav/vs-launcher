@@ -108,6 +108,40 @@ filter_normalized = method_body(
 if "SearchNormalization.normalize(" in filter_normalized:
     errors.append("filterNormalized must not normalize the query again")
 
+if filter_normalized.count("for (AppEntry app : source)") != 1:
+    errors.append("filterNormalized must keep one traversal of the searchable app list")
+for forbidden in (".stream(", ".sort(", "Collections.sort("):
+    if forbidden in filter_normalized:
+        errors.append(f"filterNormalized must stay linear; found {forbidden}")
+
+build_results = method_body(main, "buildSearchResults")
+for required in (
+    "SearchCommand.matchingNormalized(normalizedQuery)",
+    "TimeQueryActions.alarmNormalized(normalizedQuery)",
+):
+    if required not in build_results:
+        errors.append(f"Search actions must reuse the cached normalized query: missing {required}")
+
+for utility in (
+    "QueryActions.java",
+    "TimeQueryActions.java",
+    "CalculatorAction.java",
+    "SearchCommand.java",
+):
+    utility_text = (MAIN_SRC / "com/vslauncher" / utility).read_text(encoding="utf-8")
+    for forbidden in (
+        "PackageManager",
+        "LauncherApps",
+        "SharedPreferences",
+        "java.net",
+        "HttpURLConnection",
+        "getSystemService(",
+        "FileInputStream",
+        "FileOutputStream",
+    ):
+        if forbidden in utility_text:
+            errors.append(f"{utility} must stay local and I/O-free; found {forbidden}")
+
 manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "android.permission.QUERY_ALL_PACKAGES" in manifest:
     errors.append("Launcher must not request QUERY_ALL_PACKAGES")
