@@ -959,3 +959,116 @@ If the same PID is still active instrumentation and later enters a cgroup with
 `frozen 1`, stop spending time on ordinary package-scoped freezer remedies.
 That result would justify moving to the reversible device-wide AOSP diagnostic
 for this particular Infinix test session.
+
+
+---
+
+## Batch 7 — reproducible helper script
+
+The repository now includes:
+
+~~~text
+scripts/infinix-freezer-session.sh
+~~~
+
+It packages the verified research into guarded commands without automatically
+changing device policy.
+
+### Read-only status
+
+~~~sh
+bash scripts/infinix-freezer-session.sh status
+~~~
+
+Shows the current DeviceConfig value and CachedAppOptimizer diagnostics.
+
+### Inspect the live controller
+
+While Macrobenchmark/Baseline Profile instrumentation is running or stalled:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh verify
+~~~
+
+This reports:
+
+- live controller PID
+- active instrumentation state
+- /proc PID cgroup membership
+- unified cgroup-v2 cgroup.events when resolvable
+- /proc PID status
+
+### Final process-scoped check
+
+After the controller process exists:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh sticky
+~~~
+
+This applies:
+
+~~~text
+am unfreeze --sticky <live-controller-pid>
+~~~
+
+and immediately verifies the same process.
+
+If the PID is later recreated, rerun sticky for the new PID. A sticky result is
+not a package-level policy.
+
+### Guarded device-wide diagnostic
+
+Only after the same-PID sticky test fails:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh disable --yes
+~~~
+
+The script:
+
+1. records the exact original use_freezer DeviceConfig value
+2. records device/build metadata
+3. records CachedAppOptimizer state
+4. sets use_freezer=false
+5. reboots
+6. waits for sys.boot_completed
+7. records the disabled state
+8. prints the exact restore command
+
+It creates a directory such as:
+
+~~~text
+device-test-results/freezer-session-YYYYMMDD-HHMMSS/
+~~~
+
+Keep that directory until rollback is verified.
+
+### Restore
+
+Use the exact result directory printed by disable:
+
+~~~sh
+bash scripts/infinix-freezer-session.sh restore   device-test-results/freezer-session-YYYYMMDD-HHMMSS
+~~~
+
+Rollback behavior:
+
+- original true -> put true
+- original false -> put false
+- original null/unset -> delete the override
+- any unexpected saved value -> abort rather than guessing
+
+The script then reboots and records the post-rollback state.
+
+### Safety boundary
+
+The helper deliberately does **not**:
+
+- change the freezer merely from status/verify
+- disable the freezer without --yes
+- uninstall VS Launcher
+- alter XOS undocumented settings
+- automatically run performance benchmarks before the device stabilizes
+- declare a profile beneficial
+- automatically commit generated profile rules
