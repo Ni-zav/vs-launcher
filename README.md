@@ -1,12 +1,12 @@
 # VS Launcher
 
-VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.8 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent utilities, lazy virtual accessibility nodes, no continuous render loop, and no production UI framework.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.9 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent utilities, lazy virtual accessibility nodes, no continuous render loop, and no production UI framework.
 
 ## Interaction
 
 - **Swipe left** from Home → Apps opens in search mode with the field focused and keyboard requested.
-- **Start scrolling Apps** → search/query/keyboard disappear, the list expands, and the right-side A–Z fast-scroll rail becomes available.
-- **Drag the A–Z + # rail** → jump directly to the nearest available app initial; `#` catches numeric/symbol/non-A–Z labels and the active letter is transient.
+- **Start scrolling Apps** → search/query/keyboard disappear, the list expands, and the right-side `#–Z` fast-scroll rail becomes available.
+- **Hold/drag the `#–Z` rail** → jump to the nearest available bucket; the actual active initial stays bright on the rail, matching apps are promoted, and unrelated apps temporarily recede.
 - **Tap APPS** or **pull downward at the top of browse mode** → re-enter focused search without going Home.
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
@@ -27,9 +27,10 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 
 ### Home
 - Visible apps: 1–8.
-- Position: Top / Center / Bottom.
-- Density: Compact / Normal / Spacious.
-- Text size: Small / Medium / Large.
+- Vertical position: Top / Center / Bottom.
+- Horizontal alignment: Left / Center / Right.
+- Density: Dense / Compact / Normal / Spacious.
+- Home text: Small / Medium / Large.
 - Persistent per-slot app or pinned app-shortcut assignment.
 - Per-app aliases on Home.
 - Move Home slots up/down or clear them.
@@ -42,7 +43,8 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 - Weather detail: Both / Temperature / Condition.
 - Battery detail: Both / Icon / Percent.
 
-### Interaction
+### Apps / interaction
+- Apps text: Small / Medium / Large, independent from Home text.
 - Quick-launch app for swipe up.
 - Search-first Apps entry with automatic browse-mode collapse.
 - Native app shortcuts are loaded only after long-press.
@@ -97,7 +99,7 @@ Foreground hierarchy uses a small fixed neutral scale rather than pure white eve
 
 There are still no chromatic theme colors, gradients, blur, shadows, wallpapers, cards, or decorative animation. The hierarchy comes from luminance, system font weight, text size, whitespace, placement, and transient emphasis.
 
-Pressed rows keep the black surface and brighten text instead of flashing a white rectangle. The focused search field is borderless. The A–Z rail is intentionally quiet until touched. Low battery receives temporary luminance emphasis rather than color.
+Pressed rows keep the black surface and brighten text instead of flashing a white rectangle. The focused search field is borderless. The `#–Z` rail is intentionally quiet until touched; scrubbing uses only the existing luminance hierarchy to focus one bucket. Low battery receives temporary luminance emphasis rather than color.
 
 
 The full interaction/privacy rationale is documented in **[docs/FRICTIONLESS_FEATURES.md](docs/FRICTIONLESS_FEATURES.md)**.
@@ -112,7 +114,7 @@ The launcher uses Android system fonts only:
 | Metadata | sans-serif | 13sp |
 | Section labels | sans-serif-medium | 11sp |
 
-Home app text size and row density can be changed with discrete presets.
+Home and Apps text sizes use separate discrete presets. Home rows also support discrete vertical position, horizontal alignment, and density without arbitrary sliders.
 
 ## Profiles and Private Space
 
@@ -140,7 +142,7 @@ The UI thread should be almost idle while Home is not moving.
 - Search ranking is one pass over visible apps while preserving deterministic tier order.
 - Canonical and alias initials are precomputed outside typing.
 - Fuzzy fallback is bounded ordered-subsequence matching rather than quadratic edit distance.
-- A–Z + # first-row indices are cached when the browse list changes.
+- `#–Z` first-row indices and each browse row's alphabet bucket are cached when the browse list changes.
 - Search command definitions are static and only matched when the query is at least two normalized characters.
 - Dial/URL recognition, timer/alarm parsing, and calculator parsing are local and permissionless; they do not index contacts or history.
 - Search utility parsers are I/O-free and scale with query length; they do not introduce another app-list traversal.
@@ -208,7 +210,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.8.0-debug.apk
+dist/VS-Launcher-0.9.0-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.

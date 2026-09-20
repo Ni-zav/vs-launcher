@@ -8,7 +8,7 @@ The product rule is:
 
 This keeps Home quiet while making the launcher faster for deliberate interaction.
 
-## 0.8 interaction contract
+## 0.9 interaction contract
 
 ### Home
 
@@ -21,6 +21,9 @@ Home keeps only glanceable state and explicitly chosen apps.
 - Tap the first empty `+ ADD APP` slot: open the picker directly.
 - Long-press an assigned Home row: advanced slot actions.
 - Home slots can hold either a normal app or a launcher-pinned native app shortcut while remaining one text row.
+- Home app rows keep discrete vertical Top/Center/Bottom placement plus independent Left/Center/Right alignment.
+- Home density is Dense/Compact/Normal/Spacious; larger Home text may raise the effective row height only enough to prevent cramped typography.
+- Home text size and Apps text size are independent; upgraded installs inherit the old shared text size until the user changes one side.
 - Tap time: show alarms.
 - Tap date: open today's calendar.
 - Tap battery: battery saver settings, with general Settings as fallback.
@@ -66,22 +69,24 @@ SEARCH
 → query cleared
 → keyboard/search field removed
 → list expands
-→ APPS + A–Z rail
+→ APPS + #–Z rail
 ```
 
 This transition is deliberate: search and browse are two modes of one page, not two persistent controls competing for space.
 
 ### Alphabet fast scroll
 
-The A–Z + # rail exists only in Apps browse mode.
+The `#–Z` rail exists only in Apps browse mode and uses one fixed centered glyph axis.
 
-- no rail on Home
-- no rail while search is visible
-- right-edge touch/drag jumps to the nearest available initial
-- `#` catches numeric, symbolic, and non-A–Z initials
-- first rows for A–Z + # are precomputed when the browse list changes
-- letters with no target use the disabled luminance role
-- the enlarged active letter exists only while scrubbing
+- `#` comes first and catches numeric, symbolic, and non-A–Z initials
+- no rail on Home and no rail while search is visible
+- the invisible right-edge touch target remains wider than the tiny visible rail
+- touch/drag snaps unavailable letters to the actual nearest available bucket
+- the active glyph brightens at its own position on the rail rather than appearing as a separate floating indicator
+- while held, apps in the active bucket use primary luminance and unrelated app rows use the disabled luminance role
+- WORK/PRIVATE metadata stays quiet instead of disappearing
+- releasing the rail restores normal app luminance immediately
+- first-row indices and per-row alphabet buckets are cached outside draw-time
 
 The rail is navigation, not decoration.
 
@@ -174,7 +179,7 @@ This scale is semantic, not customizable. It exists to stop metadata, section la
 
 Pressed rows keep the black surface and brighten text rather than inverting the entire row. The focused search EditText is borderless. Low battery may temporarily promote its luminance but never changes hue.
 
-Settings rows are intentionally dividerless: section labels plus whitespace provide structure without making every row look equally important. WORK/PRIVATE headers get a small leading gap inside their existing row so profile namespaces separate from personal apps without adding a new permanent surface.
+Settings rows are intentionally dividerless: a larger title→section gap plus deliberate space around each section label provides structure without making every row look equally important. Section labels scroll normally rather than becoming sticky. WORK/PRIVATE headers get a small leading gap inside their existing row so profile namespaces separate from personal apps without adding a new permanent surface.
 
 Search emphasis is contextual. With an empty query, visible app rows stay at the same luminance. Once normalized input exists, only the deterministic first-ranked result may rise to primary luminance to communicate the Go/Enter target.
 
@@ -362,13 +367,13 @@ Rejected because memorization/configuration becomes its own source of friction. 
 
 ## Performance invariants
 
-0.8 features must preserve:
+0.9 features must preserve:
 
 1. no continuous idle render loop
 2. no PackageManager/LauncherApps/SharedPreferences calls from `LauncherSurface`
 3. no allocation, text measurement, resource lookup, or dp/sp conversion in draw hot paths
 4. search remains one traversal of the visible searchable apps per query change
-5. app initials/aliases/A–Z + # first indices are cached outside frame-critical paths
+5. app initials/aliases, `#–Z` first indices, and per-row alphabet buckets are cached outside frame-critical paths
 6. shortcut discovery happens only after deliberate long-press; pinned Home shortcut launch uses the stored ID without startup queries
 7. work/private containers are plain Canvas rows, not nested view hierarchies
 8. profile apps that Android marks unavailable never leak into search
@@ -380,5 +385,7 @@ Rejected because memorization/configuration becomes its own source of friction. 
 14. typed search normalizes once and utility parsers reuse cached normalized input where applicable
 15. utility parsers remain local/I/O-free and never add a second app-list traversal
 16. virtual accessibility nodes stay outside draw hot paths and are only materialized on accessibility demand
+17. Home alignment/density/text changes use cached geometry and Paint state; they add no per-frame measurement
+18. Apps text size never mutates Settings typography, and Home text size remains independent from Apps text
 
 CI enforces the renderer/design portions of this contract and JVM tests cover search ranking, geometry, and profile privacy policy.

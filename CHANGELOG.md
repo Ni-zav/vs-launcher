@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.9.0 — 2026-09-20
+
+### Minimal layout refinement
+
+- Added independent Home horizontal alignment: Left / Center / Right, alongside the existing Top / Center / Bottom vertical position.
+- Added a Dense 38dp row preset before Compact / Normal / Spacious.
+- Split Home text size from Apps text size while preserving the pre-0.9 shared text appearance on upgrade and old JSON import.
+- Home row height now grows only when selected Home text needs extra breathing room.
+- The first empty `+ ADD APP` hint follows the same Home alignment as assigned rows.
+
+### Alphabet rail
+
+- Reordered the browse rail to `#–Z` so the fallback bucket is first.
+- Centered every rail glyph on one fixed visual axis while retaining the wider invisible touch target.
+- Removed the separate floating active-letter position; the actual snapped bucket brightens in place.
+- Holding the rail promotes apps in the active bucket and temporarily dims unrelated app rows using the existing monochrome luminance roles.
+- Unavailable touches snap to the actual nearest available bucket; releasing restores normal row luminance.
+- Cached each browse row's alphabet bucket outside `onDraw()`.
+
+### Settings / status rhythm
+
+- Increased the gap between the SETTINGS title, section labels, and row groups while keeping section labels as normal scrolling content.
+- Kept Settings typography independent from the new Apps text-size preference.
+- Normalized pressed-state brightness across Home apps/hints, Apps, profile labels, and Settings without row backgrounds.
+- When weather and battery are both visible they remain a left/right pair; a lone status item uses the natural left-side position with matching tap/accessibility bounds.
+
+### Performance / compatibility
+
+- Added JVM coverage for Dense row fitting, text-safe Home row height, `#–Z` bucket mapping, actual-bucket snapping, and Settings section rhythm.
+- Added CI source guards for centered rail geometry, cached scrub buckets, independent Settings typography, legacy text-size preservation, and no draw-time regression.
+- Existing 0.8 preferences/configs remain compatible; JSON format stays at 1 with optional `homeAlignment` and `appsTextSize` fields.
+- No new View hierarchy, idle loop, theme system, arbitrary slider, gesture, or persistent Home surface was added.
+- Bumped app version to `0.9.0` / versionCode `9`.
+- Updated weather User-Agent to `VS-Launcher/0.9`.
+
 ## 0.8.0 — 2026-09-20
 
 ### Search-core performance
