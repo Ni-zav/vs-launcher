@@ -27,6 +27,13 @@ public final class LauncherLayoutTest {
         assertEquals(2, LauncherLayout.nearestAvailableBucket(first, 3));
     }
 
+    @Test public void denseHomeRowsGrowOnlyWhenTextNeedsIt() {
+        assertEquals(38f, LauncherLayout.homeRowHeight(38f, 19f), 0.001f);
+        assertEquals(39.6f, LauncherLayout.homeRowHeight(38f, 22f), 0.001f);
+        assertEquals(44f, LauncherLayout.homeRowHeight(44f, 22f), 0.001f);
+        assertEquals(51.48f, LauncherLayout.homeRowHeight(38f, 28.6f), 0.001f);
+    }
+
     @Test public void visibleRowsFitCommonPhoneHeights() {
         float[] rowHeights = {38f, 44f, 54f, 64f};
         float[] contentHeights = {320f, 480f, 640f, 760f};

@@ -28,6 +28,12 @@ final class LauncherLayout {
         return -1;
     }
 
+    static float homeRowHeight(float densityRowPx, float homeTextPx) {
+        float base = Math.max(0f, densityRowPx);
+        float textSafe = Math.max(0f, homeTextPx) * 1.8f;
+        return Math.max(base, textSafe);
+    }
+
     static int visibleRows(int maxRows, float rowHeight, float start, float end) {
         if (maxRows <= 0 || rowHeight <= 0f || end <= start) return 0;
         int fit = Math.max(0, (int) Math.floor((end - start) / rowHeight));

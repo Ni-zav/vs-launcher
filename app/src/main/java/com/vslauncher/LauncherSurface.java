@@ -685,7 +685,10 @@ final class LauncherSurface extends View {
         leftPx = dp(DesignTokens.PAGE_HORIZONTAL_DP);
         rightPx = Math.max(leftPx, getWidth() - leftPx);
         rowHeightPx = dp(uiConfig.rowHeightDp());
-        homeRowHeightPx = Math.max(rowHeightPx, sp(uiConfig.homeTextSp()) * 1.8f);
+        homeRowHeightPx = LauncherLayout.homeRowHeight(
+                rowHeightPx,
+                sp(uiConfig.homeTextSp())
+        );
         if (LauncherPreferences.ALIGN_CENTER.equals(uiConfig.homeAlignment)) {
             homeTextXPx = getWidth() * 0.5f;
         } else if (LauncherPreferences.ALIGN_RIGHT.equals(uiConfig.homeAlignment)) {
