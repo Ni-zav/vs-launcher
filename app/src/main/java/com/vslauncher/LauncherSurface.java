@@ -143,7 +143,6 @@ final class LauncherSurface extends View {
     private float weatherOuterRadiusPx;
     private float weatherInnerRadiusPx;
     private float weatherTextOffsetPx;
-    private float statusDividerYPx;
     private float batteryWidthPx;
     private float batteryHeightPx;
     private float batteryRadiusPx;
@@ -489,7 +488,6 @@ final class LauncherSurface extends View {
         weatherOuterRadiusPx = dp(4.5f);
         weatherInnerRadiusPx = dp(1.5f);
         weatherTextOffsetPx = dp(18f);
-        statusDividerYPx = contentTopPx + dp(153f);
         batteryWidthPx = dp(24f);
         batteryHeightPx = dp(10f);
         batteryRadiusPx = dp(3f);
@@ -512,7 +510,7 @@ final class LauncherSurface extends View {
         settingsSectionHeaderHeightPx = dp(28f);
         recalculateSettingsGeometry();
 
-        float defaultHomeStart = contentTopPx + dp(174f);
+        float defaultHomeStart = contentTopPx + dp(164f);
         float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
         float available = Math.max(0f, homeEnd - defaultHomeStart);
         float requestedHeight = maxHomeApps * rowHeightPx;
@@ -558,8 +556,6 @@ final class LauncherSurface extends View {
     private void drawHome(Canvas canvas) {
         float x = left();
         float right = rightPx;
-        float top = contentTop();
-
         if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
             if (uiConfig.showDate) canvas.drawText(dateText, x, dateTopBaselinePx, datePaint);
             if (uiConfig.showTime) canvas.drawText(timeText, x, timeDateFirstBaselinePx, timePaint);
@@ -685,7 +681,6 @@ final class LauncherSurface extends View {
 
     private void drawApps(Canvas canvas) {
         float x = left();
-        float top = contentTop();
         canvas.drawText(searchActive ? "SEARCH" : "APPS", x, allAppsTitleBaselinePx, labelPaint);
         canvas.drawText(appCountText, rightPx - appCountWidth, allAppsTitleBaselinePx, labelPaint);
 
@@ -917,8 +912,10 @@ final class LauncherSurface extends View {
                 pressedSettingsIndex = page == PAGE_SETTINGS
                         ? settingsIndexAt(downX, downY)
                         : -1;
-                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0 || pressedSettingsIndex >= 0) {
+                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0) {
                     postDelayed(longPressRunnable, longPressTimeout);
+                }
+                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0 || pressedSettingsIndex >= 0) {
                     invalidate();
                 }
                 return true;
