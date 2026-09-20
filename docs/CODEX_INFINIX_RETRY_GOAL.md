@@ -1,3 +1,24 @@
+# Historical goal — X6855 Macrobenchmark freezer retry
+
+This goal has been completed on the current Infinix X6855 firmware.
+
+Do not run it again unless the firmware changes or a different physical device is being tested.
+
+Current path:
+
+- [CODEX_INFINIX_MANUAL_PROFILE_GOAL.md](CODEX_INFINIX_MANUAL_PROFILE_GOAL.md)
+- [INFINIX_MANUAL_PROFILE.md](INFINIX_MANUAL_PROFILE.md)
+
+Confirmed outcome of this older path:
+
+- exact live PID `am unfreeze --sticky` did not prevent `frozen 1`
+- `activity_manager_native_boot/use_freezer=false` was not retained across reboot
+- `Settings.Global.cached_apps_freezer=disabled` did not prevent the controller cgroup from freezing
+- all global changes were restored
+- no valid Macrobenchmark A/B was produced
+
+---
+
 # Codex goal — retry Infinix Android 16 Macrobenchmark / Baseline Profile
 
 Use this as the next local Codex `/goal` prompt after pulling the latest `main`.

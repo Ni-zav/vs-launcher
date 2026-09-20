@@ -17,7 +17,7 @@ This lets measurements be representative without adding benchmark/runtime depend
 
 Prefer a physical Android 14+ device. Android's current Macrobenchmark guidance recommends Android 14+ for more reliable compilation-state handling.
 
-For Nigel's current target, the Android 15+ Infinix is a suitable physical benchmark device.
+The current Infinix X6855 / Android 16 firmware cannot complete AndroidX Macrobenchmark because XOS freezes the out-of-process instrumentation controller. Keep this module for future firmware/reference devices, but use the documented manual profile workflow for the current X6855.
 
 Before comparing two builds:
 
@@ -162,17 +162,20 @@ A perceived animation difference is not enough evidence by itself.
 
 ---
 
-## Infinix Android 15+ baseline profile workflow
+## Infinix X6855 workflow
 
-For the exact physical-device workflow—including safe `adb install -r`, install-error triage, Android 15+ repeated cold starts, Baseline Profile generation, candidate packaging, controlled `CompilationMode.None` vs `Partial(BaselineProfileMode.Require)` A/B testing, sideload dexopt inspection, and the required evidence report—use:
+The current X6855 firmware has a documented instrumentation-controller freezer blocker. Do not treat its frozen/stalled Macrobenchmark runs as performance evidence.
 
-**[INFINIX_DEVICE_TEST.md](INFINIX_DEVICE_TEST.md)**
+Use:
 
-Use **[device-tests/TEMPLATE.md](device-tests/TEMPLATE.md)** for a committed summary after a meaningful physical-device run.
+- **[INFINIX_MANUAL_PROFILE.md](INFINIX_MANUAL_PROFILE.md)** for manual API-34+ profile capture and same-APK startup A/B.
+- **[INFINIX_DEVICE_TEST.md](INFINIX_DEVICE_TEST.md)** for the full device-test runbook.
+- **[INFINIX_FREEZER_RESEARCH.md](INFINIX_FREEZER_RESEARCH.md)** for the controller-freezer evidence and attempted documented remedies.
+- **[device-tests/TEMPLATE.md](device-tests/TEMPLATE.md)** for the committed evidence summary.
 
-The repository deliberately separates:
+The repository deliberately keeps both build roles:
 
-- `benchmark`: release-like, R8 optimized, used for timing
-- `baselineProfile`: non-obfuscated/non-optimized, used for profile capture
+- `benchmark`: release-like, R8 optimized, used for packaging and manual A/B on the current X6855, and Macrobenchmark on compatible devices.
+- `baselineProfile`: non-obfuscated/non-optimized, used for profile capture.
 
-Do not generate profile rules from the optimized benchmark variant.
+Do not generate human-readable profile rules from the optimized benchmark variant.

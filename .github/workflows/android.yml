@@ -33,11 +33,31 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Validate shell helpers
+      - name: Validate local device helpers
         run: |
           bash -n scripts/infinix-adb-smoke.sh
           bash -n scripts/infinix-freezer-session.sh
           bash -n scripts/infinix-codex-retry.sh
+          bash -n scripts/infinix-manual-profile.sh
+          bash -n scripts/infinix-manual-ab.sh
+          python3 -m py_compile scripts/analyze-startup.py
+
+          cat > /tmp/startup-a.csv <<'EOF'
+          iteration,total_time_ms,wait_time_ms,launch_state,status,timestamp
+          1,120,123,COLD,ok,2026-09-20T00:00:00+00:00
+          2,110,114,COLD,ok,2026-09-20T00:00:01+00:00
+          3,130,134,COLD,ok,2026-09-20T00:00:02+00:00
+          EOF
+
+          cat > /tmp/startup-b.csv <<'EOF'
+          iteration,total_time_ms,wait_time_ms,launch_state,status,timestamp
+          1,90,93,COLD,ok,2026-09-20T00:00:00+00:00
+          2,100,103,COLD,ok,2026-09-20T00:00:01+00:00
+          3,95,98,COLD,ok,2026-09-20T00:00:02+00:00
+          EOF
+
+          python3 scripts/analyze-startup.py             /tmp/startup-a.csv /tmp/startup-b.csv             --output /tmp/startup-comparison.md
+          grep -q 'Median TotalTime' /tmp/startup-comparison.md
 
       - name: Build and lint
         run: bash scripts/build-debug-apk.sh

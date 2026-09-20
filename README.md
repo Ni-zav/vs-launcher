@@ -105,7 +105,7 @@ The UI thread should be almost idle while Home is not moving.
 
 Actual FPS depends on the device, display refresh rate, compositor, and thermal state. The repository includes a separate Macrobenchmark module for physical-device startup/frame measurements; see **[docs/BENCHMARK.md](docs/BENCHMARK.md)**.
 
-For Nigel's Android 15+ Infinix, local Codex/ADB testing and Baseline Profile capture/A-B measurement are specified in **[docs/INFINIX_DEVICE_TEST.md](docs/INFINIX_DEVICE_TEST.md)**.
+For Nigel's current Infinix X6855 / Android 16 firmware, the AndroidX Macrobenchmark controller is frozen by XOS. The primary on-device Baseline Profile path is now the instrumentation-free manual workflow in **[docs/INFINIX_MANUAL_PROFILE.md](docs/INFINIX_MANUAL_PROFILE.md)**, with the broader device runbook in **[docs/INFINIX_DEVICE_TEST.md](docs/INFINIX_DEVICE_TEST.md)**.
 
 ## Android 15+
 
