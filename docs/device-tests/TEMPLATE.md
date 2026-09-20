@@ -171,6 +171,7 @@ Use this section when AndroidX Macrobenchmark cannot run on the device.
 - B INSTALL_PROFILE result=1 verified: yes / no
 - B status=speed-profile verified: yes / no
 - ProfileInstaller skip file deleted after test: yes / no
+- Normal sideload delivery path: Play/DM / ProfileInstaller / none / not evaluated
 - Comparison path:
 - Decision: KEEP / REJECT / INCONCLUSIVE
 - Limitation: manual same-device A/B; not Macrobenchmark
