@@ -1,27 +1,27 @@
 package com.vslauncher;
 
-import android.graphics.Color;
 import android.graphics.Typeface;
 
 /**
  * Central visual system for VS Launcher.
  *
- * The production UI is deliberately binary: #000000 and #FFFFFF only.
- * Hierarchy comes from typography, spacing, geometry, and inversion rather
- * than alpha/gray tones.
+ * The production UI stays strictly monochrome on absolute black, but no longer
+ * treats every foreground element as equally important. Hierarchy comes from a
+ * small neutral luminance scale plus typography, spacing, geometry and motion.
+ * There are no chromatic theme colors, gradients, blur, shadows or wallpaper.
  */
 final class DesignTokens {
     private DesignTokens() {}
 
-    static final int BLACK = Color.BLACK;
-    static final int WHITE = Color.WHITE;
-
-    static final int TEXT_PRIMARY = WHITE;
-    static final int TEXT_SECONDARY = WHITE;
-    static final int TEXT_TERTIARY = WHITE;
-    static final int DIVIDER = WHITE;
+    static final int BLACK = 0xFF000000;
+    static final int FOCUS = 0xFFF0F0F0;
+    static final int TEXT_PRIMARY = 0xFFDCDCDC;
+    static final int TEXT_APP = 0xFFC2C2C2;
+    static final int TEXT_SECONDARY = 0xFF909090;
+    static final int TEXT_TERTIARY = 0xFF646464;
+    static final int TEXT_DISABLED = 0xFF464646;
+    static final int DIVIDER = 0xFF2C2C2C;
     static final int SURFACE = BLACK;
-    static final int FOCUS = WHITE;
 
     static final Typeface DISPLAY = Typeface.create("sans-serif-light", Typeface.NORMAL);
     static final Typeface BODY = Typeface.create("sans-serif", Typeface.NORMAL);
