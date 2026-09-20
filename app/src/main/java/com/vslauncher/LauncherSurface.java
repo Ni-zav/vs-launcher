@@ -45,10 +45,12 @@ final class LauncherSurface extends View {
     static final int ACTION_EXPORT_CONFIG = 16;
     static final int ACTION_IMPORT_CONFIG = 17;
     static final int ACTION_HELP = 18;
+    static final int ACTION_HOME_ALIGNMENT = 19;
+    static final int ACTION_APPS_TEXT = 20;
 
-    private static final int SETTINGS_ROW_COUNT = 20;
+    private static final int SETTINGS_ROW_COUNT = 22;
     private static final int SETTINGS_SECTION_COUNT = 6;
-    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17, 19};
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 5, 14, 17, 19, 21};
     private static final String[] SETTINGS_SECTION_LABELS = {
             "HOME", "STATUS", "GESTURES", "APPS", "DATA", "HELP"
     };
@@ -232,6 +234,7 @@ final class LauncherSurface extends View {
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
     private float settingsSectionHeaderHeightPx;
+    private float settingsSectionLabelOffsetPx;
     private float profileHeaderLeadPx;
     private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
     private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
@@ -693,7 +696,7 @@ final class LauncherSurface extends View {
         contentTopPx = topInset + dp(28f);
         settingsMaxRowTopPx = contentTopPx + dp(72f);
         settingsQuickRowTopPx = contentTopPx + dp(198f);
-        settingsViewportTopPx = contentTopPx + dp(42f);
+        settingsViewportTopPx = contentTopPx + dp(48f);
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
         float appsBottomReserveDp = searchActive ? 96f : 20f;
@@ -745,7 +748,8 @@ final class LauncherSurface extends View {
         gestureThresholdPx = dp(64f);
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
-        settingsSectionHeaderHeightPx = dp(28f);
+        settingsSectionHeaderHeightPx = dp(32f);
+        settingsSectionLabelOffsetPx = dp(16f);
         profileHeaderLeadPx = dp(DesignTokens.PROFILE_HEADER_LEAD_DP);
         recalculateSettingsGeometry();
 
@@ -779,7 +783,7 @@ final class LauncherSurface extends View {
                 settingsViewportTopPx,
                 rowHeightPx,
                 settingsSectionHeaderHeightPx,
-                sp(DesignTokens.LABEL_SP),
+                settingsSectionLabelOffsetPx,
                 SETTINGS_SECTION_STARTS
         );
     }
@@ -1180,24 +1184,26 @@ final class LauncherSurface extends View {
         switch (index) {
             case 0: return "Visible apps";
             case 1: return "Home position";
-            case 2: return "Density";
-            case 3: return "Text size";
-            case 4: return "Time";
-            case 5: return "Date";
-            case 6: return "Weather";
-            case 7: return "Battery";
-            case 8: return "Status layout";
-            case 9: return "Time format";
-            case 10: return "Date style";
-            case 11: return "Weather detail";
-            case 12: return "Battery detail";
-            case 13: return "Swipe up";
-            case 14: return "Animation";
-            case 15: return "Haptics";
-            case 16: return "Hidden apps";
-            case 17: return "Export config";
-            case 18: return "Import config";
-            case 19: return "How to use";
+            case 2: return "Alignment";
+            case 3: return "Density";
+            case 4: return "Home text";
+            case 5: return "Time";
+            case 6: return "Date";
+            case 7: return "Weather";
+            case 8: return "Battery";
+            case 9: return "Status layout";
+            case 10: return "Time format";
+            case 11: return "Date style";
+            case 12: return "Weather detail";
+            case 13: return "Battery detail";
+            case 14: return "Swipe up";
+            case 15: return "Animation";
+            case 16: return "Haptics";
+            case 17: return "Apps text";
+            case 18: return "Hidden apps";
+            case 19: return "Export config";
+            case 20: return "Import config";
+            case 21: return "How to use";
             default: return "";
         }
     }
@@ -1208,34 +1214,36 @@ final class LauncherSurface extends View {
             switch (index) {
                 case 0: value = Integer.toString(maxHomeApps); break;
                 case 1: value = titleCase(uiConfig.homePosition); break;
-                case 2: value = titleCase(uiConfig.density); break;
-                case 3: value = titleCase(uiConfig.textSize); break;
-                case 4: value = onOff(uiConfig.showTime); break;
-                case 5: value = onOff(uiConfig.showDate); break;
-                case 6: value = onOff(uiConfig.showWeather); break;
-                case 7: value = onOff(uiConfig.showBattery); break;
-                case 8:
+                case 2: value = titleCase(uiConfig.homeAlignment); break;
+                case 3: value = titleCase(uiConfig.density); break;
+                case 4: value = titleCase(uiConfig.textSize); break;
+                case 5: value = onOff(uiConfig.showTime); break;
+                case 6: value = onOff(uiConfig.showDate); break;
+                case 7: value = onOff(uiConfig.showWeather); break;
+                case 8: value = onOff(uiConfig.showBattery); break;
+                case 9:
                     if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) value = "Date first";
                     else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) value = "Compact";
                     else value = "Time first";
                     break;
-                case 9:
+                case 10:
                     if (LauncherPreferences.CLOCK_12.equals(uiConfig.clockFormat)) value = "12h";
                     else if (LauncherPreferences.CLOCK_24.equals(uiConfig.clockFormat)) value = "24h";
                     else value = "System";
                     break;
-                case 10: value = titleCase(uiConfig.dateStyle); break;
-                case 11:
+                case 11: value = titleCase(uiConfig.dateStyle); break;
+                case 12:
                     if (LauncherPreferences.WEATHER_TEMP.equals(uiConfig.weatherMode)) value = "Temperature";
                     else if (LauncherPreferences.WEATHER_CONDITION.equals(uiConfig.weatherMode)) value = "Condition";
                     else value = "Both";
                     break;
-                case 12: value = titleCase(uiConfig.batteryMode); break;
-                case 13: value = quickAppLabel; break;
-                case 14: value = titleCase(uiConfig.animationSpeed); break;
-                case 15: value = onOff(uiConfig.haptics); break;
-                case 16: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
-                case 19: value = "Guide"; break;
+                case 13: value = titleCase(uiConfig.batteryMode); break;
+                case 14: value = quickAppLabel; break;
+                case 15: value = titleCase(uiConfig.animationSpeed); break;
+                case 16: value = onOff(uiConfig.haptics); break;
+                case 17: value = titleCase(uiConfig.appsTextSize); break;
+                case 18: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
+                case 21: value = "Guide"; break;
                 default: value = ""; break;
             }
             settingsValues[index] = value;
@@ -1652,24 +1660,26 @@ final class LauncherSurface extends View {
                 host.onHomeMaxChanged(next);
                 break;
             case 1: host.onSettingAction(ACTION_HOME_POSITION); break;
-            case 2: host.onSettingAction(ACTION_HOME_DENSITY); break;
-            case 3: host.onSettingAction(ACTION_HOME_TEXT); break;
-            case 4: host.onSettingAction(ACTION_TOGGLE_TIME); break;
-            case 5: host.onSettingAction(ACTION_TOGGLE_DATE); break;
-            case 6: host.onSettingAction(ACTION_TOGGLE_WEATHER); break;
-            case 7: host.onSettingAction(ACTION_TOGGLE_BATTERY); break;
-            case 8: host.onSettingAction(ACTION_STATUS_LAYOUT); break;
-            case 9: host.onSettingAction(ACTION_CLOCK_FORMAT); break;
-            case 10: host.onSettingAction(ACTION_DATE_STYLE); break;
-            case 11: host.onSettingAction(ACTION_WEATHER_MODE); break;
-            case 12: host.onSettingAction(ACTION_BATTERY_MODE); break;
-            case 13: host.onQuickAppPickerRequested(); break;
-            case 14: host.onSettingAction(ACTION_ANIMATION); break;
-            case 15: host.onSettingAction(ACTION_HAPTICS); break;
-            case 16: host.onSettingAction(ACTION_HIDDEN_APPS); break;
-            case 17: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
-            case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
-            case 19: host.onSettingAction(ACTION_HELP); break;
+            case 2: host.onSettingAction(ACTION_HOME_ALIGNMENT); break;
+            case 3: host.onSettingAction(ACTION_HOME_DENSITY); break;
+            case 4: host.onSettingAction(ACTION_HOME_TEXT); break;
+            case 5: host.onSettingAction(ACTION_TOGGLE_TIME); break;
+            case 6: host.onSettingAction(ACTION_TOGGLE_DATE); break;
+            case 7: host.onSettingAction(ACTION_TOGGLE_WEATHER); break;
+            case 8: host.onSettingAction(ACTION_TOGGLE_BATTERY); break;
+            case 9: host.onSettingAction(ACTION_STATUS_LAYOUT); break;
+            case 10: host.onSettingAction(ACTION_CLOCK_FORMAT); break;
+            case 11: host.onSettingAction(ACTION_DATE_STYLE); break;
+            case 12: host.onSettingAction(ACTION_WEATHER_MODE); break;
+            case 13: host.onSettingAction(ACTION_BATTERY_MODE); break;
+            case 14: host.onQuickAppPickerRequested(); break;
+            case 15: host.onSettingAction(ACTION_ANIMATION); break;
+            case 16: host.onSettingAction(ACTION_HAPTICS); break;
+            case 17: host.onSettingAction(ACTION_APPS_TEXT); break;
+            case 18: host.onSettingAction(ACTION_HIDDEN_APPS); break;
+            case 19: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
+            case 20: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            case 21: host.onSettingAction(ACTION_HELP); break;
             default: break;
         }
     }

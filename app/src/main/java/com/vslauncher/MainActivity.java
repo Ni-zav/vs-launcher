@@ -1104,9 +1104,18 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         LauncherPreferences.POSITION_BOTTOM
                 ));
                 break;
+            case LauncherSurface.ACTION_HOME_ALIGNMENT:
+                launcherPreferences.setHomeAlignment(next(
+                        uiConfig.homeAlignment,
+                        LauncherPreferences.ALIGN_LEFT,
+                        LauncherPreferences.ALIGN_CENTER,
+                        LauncherPreferences.ALIGN_RIGHT
+                ));
+                break;
             case LauncherSurface.ACTION_HOME_DENSITY:
                 launcherPreferences.setDensity(next(
                         uiConfig.density,
+                        LauncherPreferences.DENSITY_DENSE,
                         LauncherPreferences.DENSITY_COMPACT,
                         LauncherPreferences.DENSITY_NORMAL,
                         LauncherPreferences.DENSITY_SPACIOUS
@@ -1115,6 +1124,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             case LauncherSurface.ACTION_HOME_TEXT:
                 launcherPreferences.setTextSize(next(
                         uiConfig.textSize,
+                        LauncherPreferences.TEXT_SMALL,
+                        LauncherPreferences.TEXT_MEDIUM,
+                        LauncherPreferences.TEXT_LARGE
+                ));
+                break;
+            case LauncherSurface.ACTION_APPS_TEXT:
+                launcherPreferences.setAppsTextSize(next(
+                        uiConfig.appsTextSize,
                         LauncherPreferences.TEXT_SMALL,
                         LauncherPreferences.TEXT_MEDIUM,
                         LauncherPreferences.TEXT_LARGE
