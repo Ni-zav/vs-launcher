@@ -121,7 +121,7 @@ EOF
   fi
   shift
 
-  local timestamp result_dir original
+  local timestamp result_dir original disabled
   timestamp="$(date +%Y%m%d-%H%M%S)"
   result_dir="${1:-device-test-results/freezer-session-$timestamp}"
   mkdir -p "$result_dir"
@@ -150,9 +150,21 @@ EOF
   adb_run reboot
   wait_for_boot
 
-  adb_run shell device_config get "$NAMESPACE" "$KEY"     | tr -d '\r'     | tee "$result_dir/use_freezer.disabled.txt"
+  disabled="$(adb_run shell device_config get "$NAMESPACE" "$KEY" | tr -d '\r')"
+  printf '%s\n' "$disabled" > "$result_dir/use_freezer.disabled.txt"
 
   adb_run shell dumpsys activity     | grep -A 50 "CachedAppOptimizer settings"     > "$result_dir/cached-app-optimizer.disabled.txt" || true
+
+  if [[ "$disabled" != "false" ]]; then
+    cat >&2 <<EOF
+Cached-app freezer disable was not verified after reboot.
+Expected $NAMESPACE/$KEY=false, got '$disabled'.
+
+No benchmark/profile run should use this session as freezer-disabled evidence.
+The original state remains recorded in: $result_dir/use_freezer.before.txt
+EOF
+    exit 7
+  fi
 
   cat <<EOF
 
