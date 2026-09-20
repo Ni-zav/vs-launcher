@@ -84,7 +84,7 @@ an incompatible-signature error.
    - `FrameTimingMetric`
 
 5. **searchFilterFrames**
-   - swipe down to focused search
+   - swipe left to Apps with focused search
    - enter a query
    - `FrameTimingMetric`
 

@@ -63,13 +63,20 @@
 
 - Set/select as HOME app:
 - Home renders:
-- Swipe left → All Apps:
+- Swipe left → focused Apps search:
+- Singleton result / keyboard Go launch:
+- First Apps browse drag → search hidden + A–Z visible:
+- A–Z fast scroll:
 - Swipe right → Settings:
 - Swipe up quick launch:
-- Swipe down search:
+- Swipe down intentionally unused:
+- + ADD APP direct tap:
 - Home long-press menu:
-- All Apps long-press menu:
+- App long-press / native shortcuts:
+- Semantic time/date/battery/weather taps:
 - Hidden app behavior:
+- Work profile behavior (if present):
+- Private Space lock/search/Home privacy (if present):
 - Alias behavior:
 - Config export/import:
 - Weather permission/refresh:

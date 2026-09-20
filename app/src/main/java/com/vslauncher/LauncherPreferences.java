@@ -77,6 +77,7 @@ final class LauncherPreferences {
     private static final String BATTERY_MODE = "battery_mode";
     private static final String ANIMATION_SPEED = "animation_speed";
     private static final String HAPTICS = "haptics";
+    private static final String PRIVATE_SPACE_VISIBLE = "private_space_visible";
     private static final String ALIAS_PREFIX = "alias:";
     private static final String HIDDEN_PREFIX = "hidden:";
 
@@ -248,8 +249,16 @@ final class LauncherPreferences {
         return prefs.getBoolean(HAPTICS, true);
     }
 
+    boolean privateSpaceVisible() {
+        return prefs.getBoolean(PRIVATE_SPACE_VISIBLE, true);
+    }
+
     void setHaptics(boolean value) {
         prefs.edit().putBoolean(HAPTICS, value).apply();
+    }
+
+    void setPrivateSpaceVisible(boolean value) {
+        prefs.edit().putBoolean(PRIVATE_SPACE_VISIBLE, value).apply();
     }
 
     String alias(String component) {
@@ -322,6 +331,7 @@ final class LauncherPreferences {
         root.put("batteryMode", batteryMode());
         root.put("animationSpeed", animationSpeed());
         root.put("haptics", haptics());
+        root.put("privateSpaceVisible", privateSpaceVisible());
 
         JSONArray slots = new JSONArray();
         for (int i = 0; i < MAX_HOME_APPS; i++) {
@@ -373,6 +383,10 @@ final class LauncherPreferences {
         edit.putString(ANIMATION_SPEED, oneOf(root.optString("animationSpeed", ANIMATION_FAST),
                 ANIMATION_INSTANT, ANIMATION_FAST, ANIMATION_NORMAL));
         edit.putBoolean(HAPTICS, root.optBoolean("haptics", true));
+        edit.putBoolean(
+                PRIVATE_SPACE_VISIBLE,
+                root.optBoolean("privateSpaceVisible", true)
+        );
 
         JSONArray slots = root.optJSONArray("homeSlots");
         if (slots != null) {

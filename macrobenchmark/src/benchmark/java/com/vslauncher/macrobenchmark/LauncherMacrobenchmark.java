@@ -78,19 +78,6 @@ public final class LauncherMacrobenchmark {
         device.waitForIdle();
     }
 
-    private void swipeDown() {
-        UiDevice device = device();
-        int x = device.getDisplayWidth() / 2;
-        device.swipe(
-                x,
-                device.getDisplayHeight() / 4,
-                x,
-                device.getDisplayHeight() * 3 / 4,
-                16
-        );
-        device.waitForIdle();
-    }
-
     @Test
     public void coldStartup() {
         benchmarkRule.measureRepeated(
@@ -194,7 +181,7 @@ public final class LauncherMacrobenchmark {
                 ITERATIONS,
                 scope -> {
                     launch(scope);
-                    swipeDown();
+                    swipeLeft();
                     return Unit.INSTANCE;
                 },
                 scope -> {

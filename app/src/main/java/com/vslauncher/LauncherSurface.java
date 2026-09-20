@@ -50,14 +50,24 @@ final class LauncherSurface extends View {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
         void onHomeSlotLongPressed(int index);
+        void onEmptyHomeSlotTapped(int index);
         void onAllAppsLongPressed(AppEntry app);
+        void onProfileHeaderTapped(int profileKind, long profileSerial);
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
-        void onSearchGestureRequested();
+        void onAppsBrowseGestureStarted();
         void onSettingAction(int action);
+        void onClockTapped();
+        void onDateTapped();
         void onWeatherTapped();
+        void onBatteryTapped();
     }
+
+    private static final String[] ALPHABET_LABELS = {
+            "A","B","C","D","E","F","G","H","I","J","K","L","M",
+            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
+    };
 
     private static final int GESTURE_NONE = 0;
     private static final int GESTURE_HORIZONTAL = 1;
@@ -72,6 +82,8 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
     private final Paint labelPaint =
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint alphabetPaint =
+            textPaint(9f, DesignTokens.TEXT_PRIMARY, DesignTokens.LABEL);
     private final Paint appPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint appInversePaint =
@@ -94,6 +106,8 @@ final class LauncherSurface extends View {
 
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<AppListItem> browseItems = Collections.emptyList();
+    private float[] browseValueWidths = new float[0];
     private List<AppEntry> homeApps = Collections.emptyList();
     private List<String> homeLabels = Collections.emptyList();
 
@@ -172,6 +186,16 @@ final class LauncherSurface extends View {
     private float settingsScroll;
     private int hiddenAppCount;
     private boolean searchActive;
+    private final int[] alphabetFirstIndex = new int[26];
+    private final float[] alphabetWidths = new float[26];
+    private final float[] alphabetActiveWidths = new float[26];
+    private boolean alphabetScrubbing;
+    private int alphabetActiveIndex = -1;
+    private float alphabetTouchLeftPx;
+    private float alphabetRailX;
+    private float alphabetStepPx;
+    private float alphabetFirstBaselinePx;
+    private float alphabetActiveBaselinePx;
     private float downX;
     private float downY;
     private float lastY;
@@ -205,14 +229,14 @@ final class LauncherSurface extends View {
                 return;
             }
 
-            if (page == PAGE_APPS
-                    && pressedAppIndex >= 0
-                    && pressedAppIndex < filteredApps.size()) {
+            if (page == PAGE_APPS && pressedAppIndex >= 0) {
+                AppEntry pressed = appAtVisibleIndex(pressedAppIndex);
+                if (pressed == null) return;
                 longPressTriggered = true;
                 if (uiConfig.haptics) {
                     performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                 }
-                host.onAllAppsLongPressed(filteredApps.get(pressedAppIndex));
+                host.onAllAppsLongPressed(pressed);
             }
         }
     };
@@ -237,6 +261,12 @@ final class LauncherSurface extends View {
         batteryStrokePaint.setStrokeWidth(dp(1.2f));
         batteryStrokePaint.setStrokeCap(Paint.Cap.ROUND);
         batteryStrokePaint.setColor(DesignTokens.TEXT_SECONDARY);
+
+        java.util.Arrays.fill(alphabetFirstIndex, -1);
+        for (int i = 0; i < ALPHABET_LABELS.length; i++) {
+            alphabetWidths[i] = alphabetPaint.measureText(ALPHABET_LABELS[i]);
+            alphabetActiveWidths[i] = titlePaint.measureText(ALPHABET_LABELS[i]);
+        }
 
         statusStrokePaint.setStyle(Paint.Style.STROKE);
         statusStrokePaint.setStrokeWidth(dp(1.2f));
@@ -301,26 +331,79 @@ final class LauncherSurface extends View {
         apps = all == null ? Collections.emptyList() : all;
         filteredApps = filtered == null ? apps : filtered;
         updateAppCountCache();
+        refreshAlphabetIndex();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         invalidate();
+    }
+
+    void setBrowseItems(List<AppListItem> items) {
+        browseItems = items == null ? Collections.emptyList() : items;
+        browseValueWidths = new float[browseItems.size()];
+        for (int i = 0; i < browseItems.size(); i++) {
+            String value = browseItems.get(i).value;
+            browseValueWidths[i] = value == null || value.isEmpty()
+                    ? 0f
+                    : metaPaint.measureText(value);
+        }
+        updateAppCountCache();
+        refreshAlphabetIndex();
+        appScroll = clamp(appScroll, 0f, maxAppScroll());
+        if (page == PAGE_APPS) invalidate();
     }
 
     void setFilteredApps(List<AppEntry> filtered) {
         filteredApps = filtered == null ? apps : filtered;
         updateAppCountCache();
+        refreshAlphabetIndex();
         appScroll = 0f;
         scroller.abortAnimation();
         if (page == PAGE_APPS) invalidate();
     }
 
     private void updateAppCountCache() {
-        appCountText = Integer.toString(filteredApps.size());
+        int count;
+        if (searchActive) {
+            count = filteredApps.size();
+        } else {
+            count = 0;
+            for (AppListItem item : browseItems) if (item.isApp()) count++;
+        }
+        appCountText = Integer.toString(count);
         appCountWidth = labelPaint.measureText(appCountText);
+    }
+
+    private void refreshAlphabetIndex() {
+        java.util.Arrays.fill(alphabetFirstIndex, -1);
+
+        if (searchActive) {
+            for (int index = 0; index < filteredApps.size(); index++) {
+                cacheAlphabetRow(index, filteredApps.get(index));
+            }
+            return;
+        }
+
+        for (int index = 0; index < browseItems.size(); index++) {
+            AppListItem item = browseItems.get(index);
+            if (item.isApp()) cacheAlphabetRow(index, item.app);
+        }
+    }
+
+    private void cacheAlphabetRow(int row, AppEntry app) {
+        String normalized = app.normalizedLabel;
+        if (normalized.isEmpty()) return;
+        char first = Character.toUpperCase(normalized.charAt(0));
+        if (first < 'A' || first > 'Z') return;
+        int bucket = first - 'A';
+        if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = row;
     }
 
     void setSearchActive(boolean active) {
         if (searchActive == active) return;
         searchActive = active;
+        recalculateGeometry();
+        updateAppCountCache();
+        refreshAlphabetIndex();
+        appScroll = clamp(appScroll, 0f, maxAppScroll());
         if (page == PAGE_APPS) invalidate();
     }
 
@@ -475,7 +558,19 @@ final class LauncherSurface extends View {
         settingsViewportTopPx = contentTopPx + dp(42f);
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
-        appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
+        float appsBottomReserveDp = searchActive ? 96f : 20f;
+        appsViewportBottomPx = Math.max(
+                appsViewportTopPx,
+                getHeight() - bottomInset - dp(appsBottomReserveDp)
+        );
+        alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
+        alphabetRailX = Math.max(0f, getWidth() - dp(8f));
+        alphabetStepPx = Math.max(
+                1f,
+                (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length
+        );
+        alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
+        alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
 
         dividerThicknessPx = dp(1f);
         timeBaselinePx = contentTopPx + dp(58f);
@@ -618,9 +713,12 @@ final class LauncherSurface extends View {
             Paint rowPaint = pressed ? appInversePaint : appPaint;
             Paint hintPaint = pressed ? metaInversePaint : metaPaint;
 
+            String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
             if (app != null) {
-                String label = index < homeLabels.size() ? homeLabels.get(index) : app.label;
+                String label = configuredLabel.isEmpty() ? app.label : configuredLabel;
                 canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
+            } else if (!configuredLabel.isEmpty()) {
+                canvas.drawText(configuredLabel, x, rowTop + baselineOffset, hintPaint);
             } else if (!emptyHintDrawn) {
                 canvas.drawText("+ ADD APP", x, rowTop + baselineOffset, hintPaint);
                 emptyHintDrawn = true;
@@ -687,20 +785,52 @@ final class LauncherSurface extends View {
         float listStart = appsViewportTopPx;
         float listBottom = appsViewportBottomPx;
 
-        if (filteredApps.isEmpty()) {
-            canvas.drawText("No matching apps", x, emptyAppsBaselinePx, metaPaint);
+        if (searchActive) {
+            if (filteredApps.isEmpty()) {
+                canvas.drawText("No matching apps", x, emptyAppsBaselinePx, metaPaint);
+                return;
+            }
+            drawAppRows(
+                    canvas,
+                    filteredApps,
+                    x,
+                    listStart - appScroll,
+                    filteredApps.size(),
+                    listStart,
+                    listBottom
+            );
             return;
         }
 
-        drawAppRows(
-                canvas,
-                filteredApps,
-                x,
-                listStart - appScroll,
-                filteredApps.size(),
-                listStart,
-                listBottom
-        );
+        if (browseItems.isEmpty()) {
+            canvas.drawText("No apps", x, emptyAppsBaselinePx, metaPaint);
+            return;
+        }
+
+        drawBrowseRows(canvas, x, listStart - appScroll, listStart, listBottom);
+        drawAlphabetRail(canvas);
+    }
+
+    private void drawAlphabetRail(Canvas canvas) {
+        for (int i = 0; i < ALPHABET_LABELS.length; i++) {
+            float baseline = alphabetFirstBaselinePx + i * alphabetStepPx;
+            canvas.drawText(
+                    ALPHABET_LABELS[i],
+                    alphabetRailX - alphabetWidths[i],
+                    baseline,
+                    alphabetPaint
+            );
+        }
+
+        if (alphabetScrubbing && alphabetActiveIndex >= 0) {
+            String active = ALPHABET_LABELS[alphabetActiveIndex];
+            canvas.drawText(
+                    active,
+                    rightPx - alphabetActiveWidths[alphabetActiveIndex],
+                    alphabetActiveBaselinePx,
+                    titlePaint
+            );
+        }
     }
 
     private void drawAppRows(
@@ -735,6 +865,60 @@ final class LauncherSurface extends View {
                     pressed ? appInversePaint : appPaint
             );
         }
+        canvas.restoreToCount(save);
+    }
+
+    private void drawBrowseRows(
+            Canvas canvas,
+            float x,
+            float startY,
+            float clipTop,
+            float clipBottom
+    ) {
+        int count = browseItems.size();
+        int first = LauncherLayout.firstVisibleIndex(clipTop, startY, rowHeightPx, count);
+        int last = LauncherLayout.lastVisibleExclusive(clipBottom, startY, rowHeightPx, count);
+        if (last <= first) return;
+
+        int save = canvas.save();
+        canvas.clipRect(x, clipTop, getWidth() - x, clipBottom);
+
+        float baselineOffset = rowHeightPx * 0.62f;
+        float right = getWidth() - x;
+        for (int i = first; i < last; i++) {
+            float rowTop = startY + i * rowHeightPx;
+            AppListItem item = browseItems.get(i);
+            boolean pressed = i == pressedAppIndex;
+
+            if (pressed) {
+                canvas.drawRect(x, rowTop, right, rowTop + rowHeightPx, primaryFillPaint);
+            }
+
+            if (item.isApp()) {
+                canvas.drawText(
+                        item.app.label,
+                        x,
+                        rowTop + baselineOffset,
+                        pressed ? appInversePaint : appPaint
+                );
+            } else {
+                canvas.drawText(
+                        item.label,
+                        x,
+                        rowTop + baselineOffset,
+                        pressed ? metaInversePaint : labelPaint
+                );
+                if (!item.value.isEmpty()) {
+                    canvas.drawText(
+                            item.value,
+                            right - browseValueWidths[i],
+                            rowTop + baselineOffset,
+                            pressed ? metaInversePaint : metaPaint
+                    );
+                }
+            }
+        }
+
         canvas.restoreToCount(save);
     }
 
@@ -903,6 +1087,17 @@ final class LauncherSurface extends View {
                 gestureMode = GESTURE_NONE;
                 longPressTriggered = false;
 
+                if (page == PAGE_APPS
+                        && !searchActive
+                        && downX >= alphabetTouchLeftPx
+                        && downY >= appsViewportTopPx
+                        && downY < appsViewportBottomPx) {
+                    alphabetScrubbing = true;
+                    host.onAppsBrowseGestureStarted();
+                    updateAlphabetScrub(downY);
+                    return true;
+                }
+
                 pressedHomeIndex = page == PAGE_HOME
                         ? homeIndexAt(downX, downY)
                         : -1;
@@ -912,7 +1107,8 @@ final class LauncherSurface extends View {
                 pressedSettingsIndex = page == PAGE_SETTINGS
                         ? settingsIndexAt(downX, downY)
                         : -1;
-                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0) {
+                if (pressedHomeIndex >= 0
+                        || (pressedAppIndex >= 0 && appAtVisibleIndex(pressedAppIndex) != null)) {
                     postDelayed(longPressRunnable, longPressTimeout);
                 }
                 if (pressedHomeIndex >= 0 || pressedAppIndex >= 0 || pressedSettingsIndex >= 0) {
@@ -921,6 +1117,10 @@ final class LauncherSurface extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (alphabetScrubbing) {
+                    updateAlphabetScrub(event.getY());
+                    return true;
+                }
                 if (velocityTracker != null) velocityTracker.addMovement(event);
 
                 float totalDx = event.getX() - downX;
@@ -934,6 +1134,9 @@ final class LauncherSurface extends View {
                     gestureMode = Math.abs(totalDx) > Math.abs(totalDy)
                             ? GESTURE_HORIZONTAL
                             : GESTURE_VERTICAL;
+                    if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
+                        host.onAppsBrowseGestureStarted();
+                    }
                 }
 
                 if (gestureMode == GESTURE_HORIZONTAL) {
@@ -957,6 +1160,13 @@ final class LauncherSurface extends View {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (alphabetScrubbing) {
+                    alphabetScrubbing = false;
+                    alphabetActiveIndex = -1;
+                    invalidate();
+                    recycleVelocityTracker();
+                    return true;
+                }
                 cancelPendingLongPress();
 
                 if (velocityTracker != null) velocityTracker.addMovement(event);
@@ -1071,9 +1281,36 @@ final class LauncherSurface extends View {
 
         if (dy < -gestureThresholdPx) {
             host.onQuickLaunchRequested();
-        } else if (dy > gestureThresholdPx) {
-            host.onSearchGestureRequested();
         }
+    }
+
+    private void updateAlphabetScrub(float y) {
+        if (alphabetStepPx <= 0f) return;
+        int requested = (int) ((y - appsViewportTopPx) / alphabetStepPx);
+        requested = Math.max(0, Math.min(ALPHABET_LABELS.length - 1, requested));
+
+        int actual = nearestAlphabetIndex(requested);
+        alphabetActiveIndex = actual >= 0 ? actual : requested;
+        if (actual >= 0) {
+            int row = alphabetFirstIndex[actual];
+            appScroll = clamp(row * rowHeightPx, 0f, maxAppScroll());
+        }
+        postInvalidateOnAnimation();
+    }
+
+    private int nearestAlphabetIndex(int requested) {
+        if (alphabetFirstIndex[requested] >= 0) return requested;
+        for (int distance = 1; distance < ALPHABET_LABELS.length; distance++) {
+            int forward = requested + distance;
+            if (forward < ALPHABET_LABELS.length && alphabetFirstIndex[forward] >= 0) {
+                return forward;
+            }
+            int backward = requested - distance;
+            if (backward >= 0 && alphabetFirstIndex[backward] >= 0) {
+                return backward;
+            }
+        }
+        return -1;
     }
 
     @Override public void computeScroll() {
@@ -1098,34 +1335,85 @@ final class LauncherSurface extends View {
         float top = contentTop();
 
         if (page == PAGE_HOME) {
-            if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-                host.onWeatherTapped();
-                return;
-            }
+            if (handleStatusTap(x, y)) return;
 
             int index = homeIndexAt(x, y);
             if (index >= 0 && index < homeApps.size()) {
                 AppEntry app = homeApps.get(index);
-                if (app != null) host.onOpenApp(app);
+                if (app != null) {
+                    host.onOpenApp(app);
+                } else if (isFirstVisibleEmptyHomeSlot(index)) {
+                    host.onEmptyHomeSlotTapped(index);
+                }
             }
             return;
         }
 
         if (page == PAGE_APPS) {
-            float viewportTop = appsViewportTopPx;
-            float viewportBottom = appsViewportBottomPx;
-            if (y < viewportTop || y >= viewportBottom) return;
+            int index = allAppsIndexAt(x, y);
+            if (index < 0) return;
 
-            float start = viewportTop - appScroll;
-            int index = rowHeightPx <= 0f ? -1 : (int) ((y - start) / rowHeightPx);
-            if (index >= 0 && index < filteredApps.size()) {
-                host.onOpenApp(filteredApps.get(index));
+            AppEntry app = appAtVisibleIndex(index);
+            if (app != null) {
+                host.onOpenApp(app);
+                return;
+            }
+
+            AppListItem profile = profileItemAtVisibleIndex(index);
+            if (profile != null) {
+                host.onProfileHeaderTapped(profile.profileKind, profile.profileSerial);
             }
             return;
         }
 
         int settingsIndex = settingsIndexAt(x, y);
         if (settingsIndex >= 0) handleSettingsRow(settingsIndex);
+    }
+
+    private boolean handleStatusTap(float x, float y) {
+        float top = contentTopPx;
+        float midpoint = getWidth() * 0.5f;
+
+        if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
+            if (uiConfig.showBattery && x >= midpoint) {
+                host.onBatteryTapped();
+                return true;
+            }
+            if (uiConfig.showWeather) {
+                host.onWeatherTapped();
+                return true;
+            }
+        }
+
+        if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && y >= top && y < top + dp(38f)) {
+                host.onDateTapped();
+                return true;
+            }
+            if (uiConfig.showTime && y >= top + dp(38f) && y < top + dp(104f)) {
+                host.onClockTapped();
+                return true;
+            }
+        } else if (LauncherPreferences.STATUS_COMPACT.equals(uiConfig.statusLayout)) {
+            if (uiConfig.showDate && x >= midpoint && y >= top && y < top + dp(42f)) {
+                host.onDateTapped();
+                return true;
+            }
+            if (uiConfig.showTime && x < midpoint && y >= top && y < top + dp(78f)) {
+                host.onClockTapped();
+                return true;
+            }
+        } else {
+            if (uiConfig.showTime && y >= top && y < top + dp(70f)) {
+                host.onClockTapped();
+                return true;
+            }
+            if (uiConfig.showDate && y >= top + dp(70f) && y < top + dp(106f)) {
+                host.onDateTapped();
+                return true;
+            }
+        }
+        return false;
     }
 
     private void handleSettingsRow(int index) {
@@ -1175,7 +1463,33 @@ final class LauncherSurface extends View {
         if (y < appsViewportTopPx || y >= appsViewportBottomPx || rowHeightPx <= 0f) return -1;
 
         float start = appsViewportTopPx - appScroll;
-        return LauncherLayout.rowIndexAt(y, start, rowHeightPx, filteredApps.size());
+        int count = searchActive ? filteredApps.size() : browseItems.size();
+        return LauncherLayout.rowIndexAt(y, start, rowHeightPx, count);
+    }
+
+    private AppEntry appAtVisibleIndex(int index) {
+        if (index < 0) return null;
+        if (searchActive) {
+            return index < filteredApps.size() ? filteredApps.get(index) : null;
+        }
+        if (index >= browseItems.size()) return null;
+        AppListItem item = browseItems.get(index);
+        return item.isApp() ? item.app : null;
+    }
+
+    private AppListItem profileItemAtVisibleIndex(int index) {
+        if (searchActive || index < 0 || index >= browseItems.size()) return null;
+        AppListItem item = browseItems.get(index);
+        return item.type == AppListItem.TYPE_PROFILE ? item : null;
+    }
+
+    private boolean isFirstVisibleEmptyHomeSlot(int candidate) {
+        for (int i = 0; i < visibleHomeRowsCache; i++) {
+            AppEntry app = i < homeApps.size() ? homeApps.get(i) : null;
+            String label = i < homeLabels.size() ? homeLabels.get(i) : "";
+            if (app == null && label.isEmpty()) return i == candidate;
+        }
+        return false;
     }
 
     private int homeIndexAt(float x, float y) {
@@ -1207,7 +1521,8 @@ final class LauncherSurface extends View {
 
     private float maxAppScroll() {
         float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
-        return LauncherLayout.maxScroll(filteredApps.size(), rowHeightPx, viewport);
+        int count = searchActive ? filteredApps.size() : browseItems.size();
+        return LauncherLayout.maxScroll(count, rowHeightPx, viewport);
     }
 
     private float maxSettingsScroll() {

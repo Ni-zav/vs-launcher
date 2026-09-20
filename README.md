@@ -1,16 +1,21 @@
 # VS Launcher
 
-VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.5 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.6 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
 
 ## Interaction
 
-- **Swipe left** from Home → All Apps without forcing the keyboard open.
+- **Swipe left** from Home → Apps opens in search mode with the field focused and keyboard requested.
+- **Start scrolling Apps** → search/query/keyboard disappear, the list expands, and the right-side A–Z fast-scroll rail becomes available.
+- **Drag the A–Z rail** → jump directly to the nearest available app initial; the active letter is transient.
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
-- **Swipe down** from Home → All Apps with search focused.
+- **Swipe down** from Home → intentionally unused.
+- **Type until one result remains** → the stable singleton result auto-launches after a short debounce.
+- **Keyboard Go/Enter** → launches the first ranked result immediately.
+- **Tap + ADD APP** → open the Home app picker directly.
 - **Long-press a Home row** → change, rename, move, or clear that slot.
-- **Long-press an All Apps row** → add to Home, hide, open App info, or request uninstall.
-- **Tap weather** → grant coarse location permission or refresh.
+- **Long-press an app** → native app shortcuts (when exposed) plus Add to Home, Hide, App info, and personal-profile Uninstall.
+- **Tap time / date / battery / weather** → alarms / today's calendar / battery saver settings / weather refresh.
 - **Back** from a side page → Home.
 
 ## Customization
@@ -36,6 +41,8 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 
 ### Interaction
 - Quick-launch app for swipe up.
+- Search-first Apps entry with automatic browse-mode collapse.
+- Native app shortcuts are loaded only after long-press.
 - Animation: Instant / Fast / Normal.
 - Long-press haptics: On / Off.
 - Hidden-app manager.
@@ -43,18 +50,22 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 
 ## Search
 
-Search remains a compact O(n) pass performed only when the query changes. Alias data is normalized and cached outside the keystroke path, and ranking is decided in one traversal of visible apps.
+Search remains a compact O(n) pass performed only when the query changes. Alias data and word/camel-case initials are normalized and cached outside the keystroke path, and all ranking tiers are decided in one traversal of visible apps.
 
 Ranking is deterministic:
 
 1. canonical app-name prefix
 2. alias prefix
-3. canonical app-name substring
-4. alias substring
+3. canonical initials
+4. alias initials
+5. canonical substring
+6. alias substring
+7. bounded canonical subsequence fallback
+8. bounded alias subsequence fallback
 
-Aliases affect Home and search ranking; All Apps still shows the application's canonical label.
+Examples: `ytm` can resolve **YouTube Music** through cached initials, while the fuzzy fallback only accepts ordered characters inside a bounded span. It never outranks exact prefixes, initials, or substrings and does not use edit-distance/Levenshtein work.
 
-Hidden apps are excluded from All Apps/search only. Existing Home slots and quick-launch assignments can still launch a hidden app.
+Aliases affect Home and search ranking; Apps still shows the application's canonical label. Hidden apps are excluded from Apps/search only. Existing personal/work Home slots and quick-launch assignments can still launch a hidden app.
 
 ## Strict black / white design
 
@@ -75,6 +86,8 @@ There are no alpha-gray hierarchy tokens, gradients, blur, shadows, wallpapers, 
 - dividers only where structure benefits from them
 - placement
 
+The full interaction/privacy rationale is documented in **[docs/FRICTIONLESS_FEATURES.md](docs/FRICTIONLESS_FEATURES.md)**.
+
 The launcher uses Android system fonts only:
 
 | Role | Typeface | Default size |
@@ -87,6 +100,19 @@ The launcher uses Android system fonts only:
 
 Home app text size and row density can be changed with discrete presets.
 
+## Profiles and Private Space
+
+VS Launcher uses Android's launcher APIs rather than duplicating profile state.
+
+- Personal apps remain the normal default list.
+- Work-profile apps appear only when Android exposes a work profile.
+- A compact `WORK  PAUSE/PAUSED` container is shown only when relevant.
+- Android 15 Private Space appears as a separate `PRIVATE  LOCK/LOCKED` container only when present.
+- Locked/paused profile apps are not enumerated into Apps or search.
+- Private Space can be hidden from the existing Hidden apps manager; users without Private Space get no extra setting.
+- Private Space apps are never eligible for persistent Home slots or swipe-up quick launch.
+- Personal-profile preference keys remain compatible with 0.5.
+
 ## Performance model
 
 The UI thread should be almost idle while Home is not moving.
@@ -97,6 +123,11 @@ The UI thread should be almost idle while Home is not moving.
 - Saved app components cache their flattened keys and use an O(1) lookup map.
 - Search aliases are cached and normalized outside the TextWatcher hot path.
 - Search ranking is one pass over visible apps while preserving deterministic tier order.
+- Canonical and alias initials are precomputed outside typing.
+- Fuzzy fallback is bounded ordered-subsequence matching rather than quadratic edit distance.
+- A–Z first-row indices are cached when the browse list changes.
+- Native app shortcuts are queried only on long-press.
+- App/profile discovery uses Android LauncherApps on the background app-index executor.
 - Settings row geometry is precomputed when size/configuration changes.
 - App discovery, labels, and sorting run on a dedicated background executor.
 - Weather location/network work runs off the UI thread.
@@ -156,7 +187,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.5.0-debug.apk
+dist/VS-Launcher-0.6.0-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
@@ -169,7 +200,10 @@ MainActivity
 ├── LauncherLayout        pure-Java geometry math used by renderer + JVM tests
 ├── LauncherPreferences   typed persisted configuration + JSON portability
 ├── LauncherUiConfig      immutable render/interaction snapshot
-├── AppRepository         background app discovery + ranked search
+├── AppRepository         LauncherApps discovery, profiles, shortcuts, ranked search
+├── AppListItem           flat Canvas browse rows for apps/profile containers
+├── LauncherProfile       minimal work/private profile state
+├── ProfilePolicy         pure-Java privacy/persistence rules
 ├── SearchRanking         pure-Java deterministic search tier contract
 └── WeatherService        coarse location, cache, network, weather mapping
 
@@ -190,3 +224,5 @@ Future changes should preserve:
 6. Home and Apps use whitespace rather than repetitive row dividers
 7. Settings keeps explicit section structure
 8. draw hot paths do not allocate, measure text, or convert dp/sp
+9. new capabilities should remain latent behind existing gestures, taps, long-press, search, or transient overlays
+10. locked Private Space apps never enter normal search or persistent Home/quick-launch state

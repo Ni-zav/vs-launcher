@@ -59,19 +59,6 @@ public final class BaselineProfileGenerator {
         device.waitForIdle();
     }
 
-    private void swipeDown() {
-        UiDevice device = device();
-        int x = device.getDisplayWidth() / 2;
-        device.swipe(
-                x,
-                device.getDisplayHeight() / 4,
-                x,
-                device.getDisplayHeight() * 3 / 4,
-                16
-        );
-        device.waitForIdle();
-    }
-
     @Test
     public void startupProfile() {
         baselineProfileRule.collect(
@@ -128,8 +115,8 @@ public final class BaselineProfileGenerator {
                     swipeRight();
                     swipeLeft();
 
-                    // Home -> focused search and filter once.
-                    swipeDown();
+                    // Home -> focused Apps search and filter once.
+                    swipeLeft();
                     UiObject2 search = device.findObject(By.desc("Search all apps"));
                     if (search == null) {
                         throw new IllegalStateException("Search field was not found");

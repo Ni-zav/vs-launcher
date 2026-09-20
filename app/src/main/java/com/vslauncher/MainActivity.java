@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.ShortcutInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -18,6 +19,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
+import android.provider.AlarmClock;
+import android.provider.CalendarContract;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
@@ -76,9 +79,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private List<AppEntry> allApps = Collections.emptyList();
     private List<AppEntry> apps = Collections.emptyList();
+    private List<LauncherProfile> launcherProfiles = Collections.emptyList();
     private Map<String, AppEntry> appByComponent = Collections.emptyMap();
     private Map<String, String> aliases = Collections.emptyMap();
     private Map<String, String> normalizedAliases = Collections.emptyMap();
+    private Map<String, String> aliasInitials = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
@@ -87,6 +92,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private int bottomInset;
     private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
+    private boolean appsBrowseMode;
+    private Runnable pendingSingleResultLaunch;
 
     private final Runnable clockTick = new Runnable() {
         @Override public void run() {
@@ -153,6 +160,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
+        appRepository.setChangeCallback(this::reloadApps);
         weatherService = new WeatherService(this, text -> {
             latestWeatherText = text;
             surface.setWeather(formatWeather(text));
@@ -270,8 +278,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void reloadApps() {
-        appRepository.load(loaded -> {
+        appRepository.load((loaded, profiles) -> {
             allApps = loaded;
+            launcherProfiles = profiles;
             HashMap<String, AppEntry> index = new HashMap<>(Math.max(16, loaded.size() * 2));
             for (AppEntry app : loaded) {
                 index.put(app.componentKey, app);
@@ -287,25 +296,66 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         aliases = loaded;
 
         HashMap<String, String> normalized = new HashMap<>(Math.max(16, loaded.size() * 2));
+        HashMap<String, String> initials = new HashMap<>(Math.max(16, loaded.size() * 2));
         for (Map.Entry<String, String> entry : loaded.entrySet()) {
             String value = entry.getValue();
             if (value == null) continue;
             String clean = value.trim().toLowerCase(Locale.ROOT);
-            if (!clean.isEmpty()) normalized.put(entry.getKey(), clean);
+            if (!clean.isEmpty()) {
+                normalized.put(entry.getKey(), clean);
+                String aliasInitial = SearchRanking.initials(value);
+                if (!aliasInitial.isEmpty()) initials.put(entry.getKey(), aliasInitial);
+            }
         }
         normalizedAliases = Collections.unmodifiableMap(normalized);
+        aliasInitials = Collections.unmodifiableMap(initials);
     }
 
     private void refreshVisibleApps() {
         Set<String> hidden = launcherPreferences.hiddenComponents();
+        boolean privateVisible = launcherPreferences.privateSpaceVisible();
         ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
         for (AppEntry app : allApps) {
-            if (!hidden.contains(app.componentKey)) visible.add(app);
+            if (hidden.contains(app.componentKey)) continue;
+            if (!ProfilePolicy.visibleInApps(app.profileKind, privateVisible)) continue;
+            visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases);
+        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
         surface.setApps(apps, filteredApps);
+        surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
+    }
+
+    private List<AppListItem> buildBrowseItems() {
+        ArrayList<AppListItem> rows = new ArrayList<>(apps.size() + launcherProfiles.size());
+
+        for (AppEntry app : apps) {
+            if (app.profileKind == AppEntry.PROFILE_PERSONAL) {
+                rows.add(AppListItem.app(app));
+            }
+        }
+
+        boolean privateVisible = launcherPreferences.privateSpaceVisible();
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == AppEntry.PROFILE_PERSONAL) continue;
+            if (!ProfilePolicy.visibleInApps(profile.kind, privateVisible)) continue;
+
+            String value = ProfilePolicy.headerValue(profile.kind, profile.quiet);
+            rows.add(AppListItem.profile(
+                    profile.kind,
+                    profile.serial,
+                    profile.label(),
+                    value
+            ));
+
+            if (profile.quiet) continue;
+            for (AppEntry app : apps) {
+                if (app.userSerial == profile.serial) rows.add(AppListItem.app(app));
+            }
+        }
+
+        return Collections.unmodifiableList(rows);
     }
 
     private void resolveLauncherConfiguration() {
@@ -317,7 +367,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         for (int index = 0; index < maxHomeApps; index++) {
             String componentName = launcherPreferences.homeSlot(index);
-            AppEntry entry = findApp(componentName);
+            AppEntry entry = findHomeEligibleApp(componentName);
 
             if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
                 entry = firstUnusedApp(used);
@@ -332,13 +382,15 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 String alias = aliases.get(component);
                 labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
                 used.add(component);
+            } else if (componentName != null && !componentName.isEmpty()) {
+                labels.add(unavailableHomeLabel(componentName));
             } else {
                 labels.add("");
             }
         }
 
         String quickComponent = launcherPreferences.quickApp();
-        quickApp = findApp(quickComponent);
+        quickApp = findHomeEligibleApp(quickComponent);
         String quickLabel;
         if (quickApp != null) {
             quickLabel = quickApp.label;
@@ -358,8 +410,30 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setHiddenAppCount(launcherPreferences.hiddenComponents().size());
     }
 
+    private String unavailableHomeLabel(String componentKey) {
+        int marker = componentKey.lastIndexOf("@u");
+        if (marker >= 0 && marker + 2 < componentKey.length()) {
+            try {
+                long serial = Long.parseLong(componentKey.substring(marker + 2));
+                for (LauncherProfile profile : launcherProfiles) {
+                    if (profile.serial != serial) continue;
+                    if (profile.kind == AppEntry.PROFILE_WORK && profile.quiet) {
+                        return "Work paused";
+                    }
+                    if (profile.kind == AppEntry.PROFILE_PRIVATE) {
+                        return "Private app unavailable";
+                    }
+                    return "Profile unavailable";
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return "App unavailable";
+    }
+
     private AppEntry firstUnusedApp(Set<String> used) {
         for (AppEntry app : apps) {
+            if (!ProfilePolicy.canPersistOnHome(app.profileKind)) continue;
             String component = app.componentKey;
             if (!used.contains(component)) return app;
         }
@@ -371,15 +445,39 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         return appByComponent.get(flattenedComponent);
     }
 
+    private AppEntry findHomeEligibleApp(String componentKey) {
+        AppEntry app = findApp(componentKey);
+        return app != null && ProfilePolicy.canPersistOnHome(app.profileKind) ? app : null;
+    }
+
+    private List<AppEntry> homeEligibleApps() {
+        ArrayList<AppEntry> eligible = new ArrayList<>(allApps.size());
+        for (AppEntry app : allApps) {
+            if (ProfilePolicy.canPersistOnHome(app.profileKind)) eligible.add(app);
+        }
+        return eligible;
+    }
+
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     private void registerPackageChanges() {
         if (packageReceiverRegistered) return;
 
+        // LauncherApps.Callback handles app/package changes across profiles.
+        // These generic profile broadcasts handle add/remove and quiet-mode transitions.
         IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
-        filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        filter.addAction(Intent.ACTION_PACKAGE_CHANGED);
-        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
-        filter.addDataScheme("package");
+        if (Build.VERSION.SDK_INT >= 34) {
+            filter.addAction(Intent.ACTION_PROFILE_ADDED);
+            filter.addAction(Intent.ACTION_PROFILE_REMOVED);
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            filter.addAction(Intent.ACTION_PROFILE_AVAILABLE);
+            filter.addAction(Intent.ACTION_PROFILE_UNAVAILABLE);
+        } else {
+            filter.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
+            filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+        }
+        filter.addAction(Intent.ACTION_MANAGED_PROFILE_ADDED);
+        filter.addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(packageReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -436,6 +534,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showPage(int target, boolean focusSearch) {
+        if (target != LauncherSurface.PAGE_APPS) appsBrowseMode = false;
         if (surface.getPage() == target) {
             if (target == LauncherSurface.PAGE_APPS && focusSearch) {
                 if (search == null) addSearch(true);
@@ -445,6 +544,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         removeSearch();
+        if (target == LauncherSurface.PAGE_APPS && focusSearch) {
+            appsBrowseMode = false;
+            surface.setSearchActive(true);
+        }
         surface.setPage(target);
 
         if (target == LauncherSurface.PAGE_APPS) {
@@ -452,7 +555,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     ? 0L
                     : uiConfig.pageDurationMs() + 20L;
             mainHandler.postDelayed(() -> {
-                if (surface.getPage() == LauncherSurface.PAGE_APPS && search == null) {
+                if (surface.getPage() == LauncherSurface.PAGE_APPS
+                        && search == null
+                        && !appsBrowseMode) {
                     addSearch(focusSearch);
                 }
             }, delay);
@@ -460,6 +565,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void addSearch(boolean focus) {
+        surface.setSearchActive(true);
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
@@ -468,7 +574,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.SEARCH_SP);
         search.setTypeface(DesignTokens.BODY);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        search.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        search.setImeOptions(EditorInfo.IME_ACTION_GO);
         search.setBackground(searchBackground());
         search.setPadding(dp(18f), 0, dp(18f), 0);
         search.setContentDescription("Search all apps");
@@ -484,17 +590,31 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
-                surface.setSearchActive(!query.trim().isEmpty());
                 filteredApps = AppRepository.filter(
                         apps,
                         query,
-                        normalizedAliases
+                        normalizedAliases,
+                        aliasInitials
                 );
                 surface.setFilteredApps(filteredApps);
+                scheduleSingleResultLaunch(query, filteredApps);
             }
 
             @Override public void afterTextChanged(Editable s) {
             }
+        });
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_GO
+                    && !(event != null
+                    && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == android.view.KeyEvent.ACTION_UP)) {
+                return false;
+            }
+            if (!filteredApps.isEmpty()) {
+                launchApp(filteredApps.get(0));
+                return true;
+            }
+            return false;
         });
 
         root.addView(search, searchLayoutParams());
@@ -530,6 +650,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void removeSearch() {
+        cancelPendingSingleResultLaunch();
         if (search == null) {
             query = "";
             surface.setSearchActive(false);
@@ -548,6 +669,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setSearchActive(false);
         filteredApps = apps;
         surface.setFilteredApps(filteredApps);
+    }
+
+    private void scheduleSingleResultLaunch(String currentQuery, List<AppEntry> currentResults) {
+        cancelPendingSingleResultLaunch();
+        String normalizedQuery = currentQuery == null ? "" : currentQuery.trim();
+        if (normalizedQuery.isEmpty() || currentResults.size() != 1) return;
+
+        AppEntry only = currentResults.get(0);
+        pendingSingleResultLaunch = () -> {
+            pendingSingleResultLaunch = null;
+            if (search == null
+                    || surface.getPage() != LauncherSurface.PAGE_APPS
+                    || !normalizedQuery.equals(query.trim())
+                    || filteredApps.size() != 1
+                    || filteredApps.get(0) != only) {
+                return;
+            }
+            launchApp(only);
+        };
+        mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
+    }
+
+    private void cancelPendingSingleResultLaunch() {
+        if (pendingSingleResultLaunch == null) return;
+        mainHandler.removeCallbacks(pendingSingleResultLaunch);
+        pendingSingleResultLaunch = null;
     }
 
     private StateListDrawable searchBackground() {
@@ -569,7 +716,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     @Override public void onPageRequested(int page) {
-        showPage(page);
+        showPage(page, page == LauncherSurface.PAGE_APPS);
     }
 
     @Override public void onOpenApp(AppEntry app) {
@@ -581,25 +728,59 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         showHomeSlotMenu(index);
     }
 
+    @Override public void onEmptyHomeSlotTapped(int index) {
+        if (index < 0 || index >= maxHomeApps) return;
+        showHomeAppPicker(index);
+    }
+
     @Override public void onAllAppsLongPressed(AppEntry app) {
         if (app == null) return;
-        CharSequence[] actions = {"Add to Home", "Hide", "App info", "Uninstall"};
+        appRepository.loadShortcuts(app, shortcuts -> showAppActions(app, shortcuts));
+    }
+
+    private void showAppActions(AppEntry app, List<ShortcutInfo> shortcuts) {
+        ArrayList<String> actions = new ArrayList<>();
+        ArrayList<ShortcutInfo> shortcutActions = new ArrayList<>();
+
+        int shortcutCount = Math.min(4, shortcuts.size());
+        for (int i = 0; i < shortcutCount; i++) {
+            ShortcutInfo shortcut = shortcuts.get(i);
+            CharSequence label = shortcut.getShortLabel();
+            if (label == null || label.length() == 0) continue;
+            actions.add(label.toString());
+            shortcutActions.add(shortcut);
+        }
+
+        int shortcutActionCount = actions.size();
+        if (ProfilePolicy.canPersistOnHome(app.profileKind)) actions.add("Add to Home");
+        actions.add("Hide");
+        actions.add("App info");
+        if (app.isPersonal()) actions.add("Uninstall");
+
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle(app.label)
-                .setItems(actions, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
+                .setTitle(app.pickerLabel())
+                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
+                    if (which < shortcutActionCount) {
+                        if (!appRepository.startShortcut(app, shortcutActions.get(which))) {
+                            reloadApps();
+                        }
+                        return;
+                    }
+
+                    String action = actions.get(which);
+                    switch (action) {
+                        case "Add to Home":
                             showAddToHomeSlotPicker(app);
                             break;
-                        case 1:
+                        case "Hide":
                             launcherPreferences.setHidden(app.componentKey, true);
                             refreshVisibleApps();
                             resolveLauncherConfiguration();
                             break;
-                        case 2:
+                        case "App info":
                             openAppInfo(app);
                             break;
-                        case 3:
+                        case "Uninstall":
                             requestUninstall(app);
                             break;
                         default:
@@ -608,6 +789,28 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    @Override public void onProfileHeaderTapped(int profileKind, long profileSerial) {
+        LauncherProfile profile = findProfile(profileKind, profileSerial);
+        if (profile == null) return;
+
+        appRepository.requestQuietMode(!profile.quiet, profile.user);
+        mainHandler.postDelayed(this::reloadApps, 500L);
+    }
+
+    private LauncherProfile findProfile(int kind, long serial) {
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == kind && profile.serial == serial) return profile;
+        }
+        return null;
+    }
+
+    private boolean hasPrivateProfile() {
+        for (LauncherProfile profile : launcherProfiles) {
+            if (profile.kind == AppEntry.PROFILE_PRIVATE) return true;
+        }
+        return false;
     }
 
     @Override public void onHomeMaxChanged(int requestedMax) {
@@ -739,8 +942,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
-    @Override public void onSearchGestureRequested() {
-        showPage(LauncherSurface.PAGE_APPS, true);
+    @Override public void onAppsBrowseGestureStarted() {
+        if (surface.getPage() != LauncherSurface.PAGE_APPS || appsBrowseMode) return;
+        appsBrowseMode = true;
+        removeSearch();
     }
 
     private void showHomeSlotMenu(int slot) {
@@ -785,15 +990,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showHomeAppPicker(int slot) {
-        if (allApps.isEmpty()) return;
+        List<AppEntry> eligible = homeEligibleApps();
+        if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
+        CharSequence[] labels = new CharSequence[eligible.size()];
+        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
-                    AppEntry selected = allApps.get(which);
+                    AppEntry selected = eligible.get(which);
                     launcherPreferences.setHomeSlot(
                             slot,
                             selected.componentKey
@@ -849,7 +1055,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Add " + app.label)
+                .setTitle("Add " + app.pickerLabel())
                 .setItems(slots, (dialog, which) -> {
                     launcherPreferences.setHomeSlot(
                             which,
@@ -862,14 +1068,20 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void openAppInfo(AppEntry app) {
-        Intent intent = new Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:" + app.component.getPackageName())
-        );
-        startActivity(intent);
+        if (!appRepository.startAppDetails(app)) {
+            Intent fallback = new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + app.component.getPackageName())
+            );
+            launchExternalIntent(fallback);
+        }
     }
 
     private void requestUninstall(AppEntry app) {
+        if (app == null || !app.isPersonal()) {
+            openAppInfo(app);
+            return;
+        }
         Intent intent = new Intent(
                 Intent.ACTION_DELETE,
                 Uri.parse("package:" + app.component.getPackageName())
@@ -878,15 +1090,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showQuickAppPicker() {
-        if (allApps.isEmpty()) return;
+        List<AppEntry> eligible = homeEligibleApps();
+        if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
+        CharSequence[] labels = new CharSequence[eligible.size()];
+        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Swipe-up app")
                 .setItems(labels, (picker, which) -> {
-                    AppEntry selected = allApps.get(which);
+                    AppEntry selected = eligible.get(which);
                     launcherPreferences.setQuickApp(selected.componentKey);
                     resolveLauncherConfiguration();
                 })
@@ -901,16 +1114,34 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void launchApp(AppEntry app) {
         if (app == null) return;
+        if (!appRepository.startApp(app)) reloadApps();
+    }
 
-        Intent intent = new Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LAUNCHER)
-                .setComponent(app.component)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+    @Override public void onClockTapped() {
+        launchExternalIntent(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
+    }
 
+    @Override public void onDateTapped() {
+        Uri uri = CalendarContract.CONTENT_URI.buildUpon()
+                .appendPath("time")
+                .appendPath(Long.toString(System.currentTimeMillis()))
+                .build();
+        launchExternalIntent(new Intent(Intent.ACTION_VIEW, uri));
+    }
+
+    @Override public void onBatteryTapped() {
+        Intent primary = new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS);
+        if (!launchExternalIntent(primary)) {
+            launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
+        }
+    }
+
+    private boolean launchExternalIntent(Intent intent) {
         try {
             startActivity(intent);
+            return true;
         } catch (ActivityNotFoundException | SecurityException error) {
-            reloadApps();
+            return false;
         }
     }
 
@@ -955,31 +1186,44 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showHiddenAppsManager() {
-        if (allApps.isEmpty()) return;
+        boolean hasPrivate = hasPrivateProfile();
+        int offset = hasPrivate ? 1 : 0;
+        int count = allApps.size() + offset;
+        if (count == 0) return;
 
-        CharSequence[] labels = new CharSequence[allApps.size()];
-        boolean[] checked = new boolean[allApps.size()];
+        CharSequence[] labels = new CharSequence[count];
+        boolean[] checked = new boolean[count];
+
+        if (hasPrivate) {
+            labels[0] = "Hide Private Space";
+            checked[0] = !launcherPreferences.privateSpaceVisible();
+        }
+
         for (int i = 0; i < allApps.size(); i++) {
             AppEntry app = allApps.get(i);
-            labels[i] = app.label;
-            checked[i] = launcherPreferences.isHidden(app.componentKey);
+            labels[i + offset] = app.pickerLabel();
+            checked[i + offset] = launcherPreferences.isHidden(app.componentKey);
         }
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Hidden apps")
                 .setMultiChoiceItems(labels, checked, (picker, which, isChecked) -> {
-                    AppEntry app = allApps.get(which);
-                    launcherPreferences.setHidden(
-                            app.componentKey,
-                            isChecked
-                    );
+                    if (hasPrivate && which == 0) {
+                        launcherPreferences.setPrivateSpaceVisible(!isChecked);
+                        return;
+                    }
+
+                    int appIndex = which - offset;
+                    if (appIndex < 0 || appIndex >= allApps.size()) return;
+                    AppEntry app = allApps.get(appIndex);
+                    launcherPreferences.setHidden(app.componentKey, isChecked);
                 })
                 .setPositiveButton("Done", (picker, which) -> {
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", (picker, which) -> {
-                    // Choices apply immediately; rebuild state so the screen is always consistent.
+                    // Choices apply immediately; rebuild state so the screen is consistent.
                     refreshVisibleApps();
                     resolveLauncherConfiguration();
                 })

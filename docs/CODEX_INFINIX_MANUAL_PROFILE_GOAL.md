@@ -156,7 +156,8 @@ After the manual A/B:
 - verify Home renders
 - All Apps works
 - Settings works
-- swipe-down search works
+- swipe-left opens focused Apps search
+- vertical Apps browsing collapses search and reveals A–Z navigation
 - quick launch works if configured
 - aliases/hidden apps remain intact
 - no FATAL EXCEPTION is introduced

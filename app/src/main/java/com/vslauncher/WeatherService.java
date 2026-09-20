@@ -145,7 +145,7 @@ final class WeatherService {
                 connection.setConnectTimeout(4_000);
                 connection.setReadTimeout(4_000);
                 connection.setRequestProperty("Accept", "application/json");
-                connection.setRequestProperty("User-Agent", "VS-Launcher/0.5");
+                connection.setRequestProperty("User-Agent", "VS-Launcher/0.6");
 
                 int status = connection.getResponseCode();
                 if (status < 200 || status >= 300) {

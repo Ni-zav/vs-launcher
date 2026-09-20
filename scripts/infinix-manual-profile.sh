@@ -226,8 +226,8 @@ run_one_journey() {
   adb_run shell input swipe "$x80" "$y50" "$x20" "$y50" 250
   sleep "$GESTURE_SLEEP"
 
-  # Home -> focused search.
-  adb_run shell input swipe "$x50" "$y25" "$x50" "$y75" 250
+  # Home -> focused Apps search.
+  adb_run shell input swipe "$x80" "$y50" "$x20" "$y50" 250
   sleep "$GESTURE_SLEEP"
   adb_run shell input text cal
   sleep "$GESTURE_SLEEP"

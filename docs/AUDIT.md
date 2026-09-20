@@ -87,10 +87,10 @@ System fonts only:
 ## Interaction contract
 
 Home:
-- left → All Apps
+- left → Apps with focused search
 - right → Settings
 - up → quick-launch app
-- down → focused search
+- down → intentionally unused
 - long press Home row → change/rename/move/clear
 - tap weather → permission/refresh
 
@@ -153,11 +153,13 @@ Before merging launcher behavior/rendering changes:
 4. Verify launcher selection after pressing Home.
 5. Repeatedly swipe Settings ↔ Home ↔ All Apps.
 6. Fling long All Apps and Settings lists.
-7. Verify swipe-left browsing does not force the keyboard.
-8. Verify swipe-down opens focused search.
-9. Test alias prefix/substring search ordering.
-10. Change, rename, move, and clear Home slots.
-11. Hide/unhide apps and verify assigned hidden apps remain launchable.
+7. Verify swipe-left enters focused search and requests the keyboard.
+8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
+9. Verify A–Z scrubbing jumps to the nearest available initial.
+10. Test prefix/alias/initials/substring/bounded-fuzzy ordering and singleton auto-launch.
+11. Change, rename, move, and clear Home slots; tap + ADD APP directly.
+12. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
+13. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
 12. Test quick-launch selection.
 13. Test all position/density/text presets.
 14. Toggle each status module and cycle its format/layout modes.
