@@ -94,6 +94,11 @@ if "profileHeaderLeadPx" not in browse_rows:
 
 if "alphabetActiveIndex" not in browse_rows or "appDisabledPaint" not in browse_rows:
     errors.append("Alphabet scrubbing must focus the active bucket and dim other app rows")
+if "LauncherLayout.alphabetBucket" in browse_rows:
+    errors.append("Alphabet bucket classification must be cached outside the draw hot path")
+if "item.alphabetBucket == alphabetActiveIndex" not in browse_rows:
+    errors.append("Alphabet scrub highlighting must use cached browse-row buckets")
+
 
 alphabet_rail = method_body(surface, "drawAlphabetRail")
 if "alphabetRailX - alphabetWidths[i] * 0.5f" not in alphabet_rail:

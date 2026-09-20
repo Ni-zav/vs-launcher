@@ -492,15 +492,12 @@ final class LauncherSurface extends View {
 
         for (int index = 0; index < browseItems.size(); index++) {
             AppListItem item = browseItems.get(index);
-            if (item.isApp()) cacheAlphabetRow(index, item.app);
+            if (!item.isApp()) continue;
+            int bucket = item.alphabetBucket;
+            if (bucket >= 0 && alphabetFirstIndex[bucket] < 0) {
+                alphabetFirstIndex[bucket] = index;
+            }
         }
-    }
-
-    private void cacheAlphabetRow(int row, AppEntry app) {
-        String normalized = app.normalizedLabel;
-        if (normalized.isEmpty()) return;
-        int bucket = LauncherLayout.alphabetBucket(normalized);
-        if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = row;
     }
 
     void setSearchActive(boolean active) {
@@ -1107,8 +1104,7 @@ final class LauncherSurface extends View {
                 if (pressed) {
                     rowPaint = appPressedPaint;
                 } else if (alphabetScrubbing && alphabetActiveIndex >= 0) {
-                    int bucket = LauncherLayout.alphabetBucket(item.app.normalizedLabel);
-                    rowPaint = bucket == alphabetActiveIndex
+                    rowPaint = item.alphabetBucket == alphabetActiveIndex
                             ? appPrimaryPaint
                             : appDisabledPaint;
                 } else {
