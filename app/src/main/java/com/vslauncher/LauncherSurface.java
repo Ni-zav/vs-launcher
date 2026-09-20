@@ -205,6 +205,7 @@ final class LauncherSurface extends View {
     private float settingsScroll;
     private int hiddenAppCount;
     private boolean searchActive;
+    private boolean searchHasQuery;
     private final int[] alphabetFirstIndex = new int[27];
     private final float[] alphabetWidths = new float[27];
     private final float[] alphabetActiveWidths = new float[27];
@@ -369,8 +370,9 @@ final class LauncherSurface extends View {
         invalidate();
     }
 
-    void setSearchResults(List<SearchResult> results) {
+    void setSearchResults(List<SearchResult> results, boolean hasQuery) {
         searchResults = results == null ? Collections.emptyList() : results;
+        searchHasQuery = hasQuery;
         searchMetaWidths = new float[searchResults.size()];
         for (int i = 0; i < searchResults.size(); i++) {
             String meta = searchResults.get(i).meta;
@@ -921,7 +923,7 @@ final class LauncherSurface extends View {
             boolean pressed = i == pressedAppIndex;
             Paint rowPaint = pressed
                     ? appPressedPaint
-                    : i == 0 ? appPrimaryPaint : appPaint;
+                    : searchHasQuery && i == 0 ? appPrimaryPaint : appPaint;
 
             canvas.drawText(result.label, x, rowTop + baselineOffset, rowPaint);
             if (!result.meta.isEmpty()) {
@@ -962,7 +964,7 @@ final class LauncherSurface extends View {
             Paint rowPaint;
             if (pressed) {
                 rowPaint = appPressedPaint;
-            } else if (searchActive && i == 0) {
+            } else if (searchActive && searchHasQuery && i == 0) {
                 rowPaint = appPrimaryPaint;
             } else {
                 rowPaint = appPaint;
