@@ -68,7 +68,7 @@ record_prop ro.build.version.incremental
   adb_run shell dumpsys display | grep -E 'refreshRate|mRefreshRate|modeId|fps' | head -n 30 || true
   echo
   echo "[home-role]"
-  adb_run shell cmd role holders android.app.role.HOME 2>&1 || true
+  adb_run shell cmd role get-role-holders android.app.role.HOME 2>&1 || true
   echo
   echo "[package-before]"
   adb_run shell dumpsys package "$PACKAGE" 2>&1 | grep -E 'versionName=|versionCode=|firstInstallTime|lastUpdateTime' || true
