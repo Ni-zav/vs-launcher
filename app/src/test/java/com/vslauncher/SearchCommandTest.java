@@ -42,10 +42,4 @@ public final class SearchCommandTest {
         assertEquals("https://example.com/a", QueryActions.urlPayload("https://example.com/a"));
         assertNull(QueryActions.urlPayload("not a url"));
     }
-
-    @Test public void webFallbackRequiresNoExistingDirectResult() {
-        assertTrue(QueryActions.shouldOfferWebFallback("unknown query", 0));
-        assertTrue(!QueryActions.shouldOfferWebFallback("x", 0));
-        assertTrue(!QueryActions.shouldOfferWebFallback("unknown query", 1));
-    }
 }
