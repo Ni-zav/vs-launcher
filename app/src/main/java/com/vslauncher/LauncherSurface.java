@@ -172,6 +172,7 @@ final class LauncherSurface extends View {
     private float appScroll;
     private float settingsScroll;
     private int hiddenAppCount;
+    private boolean searchActive;
     private float downX;
     private float downY;
     private float lastY;
@@ -316,6 +317,12 @@ final class LauncherSurface extends View {
     private void updateAppCountCache() {
         appCountText = Integer.toString(filteredApps.size());
         appCountWidth = labelPaint.measureText(appCountText);
+    }
+
+    void setSearchActive(boolean active) {
+        if (searchActive == active) return;
+        searchActive = active;
+        if (page == PAGE_APPS) invalidate();
     }
 
     void setHiddenAppCount(int count) {
@@ -679,7 +686,7 @@ final class LauncherSurface extends View {
     private void drawApps(Canvas canvas) {
         float x = left();
         float top = contentTop();
-        canvas.drawText("APPS", x, allAppsTitleBaselinePx, labelPaint);
+        canvas.drawText(searchActive ? "SEARCH" : "APPS", x, allAppsTitleBaselinePx, labelPaint);
         canvas.drawText(appCountText, rightPx - appCountWidth, allAppsTitleBaselinePx, labelPaint);
 
         float listStart = appsViewportTopPx;
