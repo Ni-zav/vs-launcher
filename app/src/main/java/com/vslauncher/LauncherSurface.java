@@ -40,6 +40,11 @@ final class LauncherSurface extends View {
     static final int ACTION_IMPORT_CONFIG = 17;
 
     private static final int SETTINGS_ROW_COUNT = 19;
+    private static final int SETTINGS_SECTION_COUNT = 5;
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17};
+    private static final String[] SETTINGS_SECTION_LABELS = {
+            "HOME", "STATUS", "GESTURES", "APPS", "DATA"
+    };
 
     interface Host {
         void onPageRequested(int page);
@@ -158,7 +163,9 @@ final class LauncherSurface extends View {
     private float gestureThresholdPx;
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
-    private float settingsSectionGapPx;
+    private float settingsSectionHeaderHeightPx;
+    private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
+    private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
     private final String[] settingsValues = new String[SETTINGS_ROW_COUNT];
     private final float[] settingsValueWidths = new float[SETTINGS_ROW_COUNT];
 
@@ -174,6 +181,7 @@ final class LauncherSurface extends View {
 
     private int pressedHomeIndex = -1;
     private int pressedAppIndex = -1;
+    private int pressedSettingsIndex = -1;
     private boolean longPressTriggered;
 
     private ValueAnimator pageAnimator;
@@ -494,7 +502,8 @@ final class LauncherSurface extends View {
         gestureThresholdPx = dp(64f);
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
-        settingsSectionGapPx = dp(24f);
+        settingsSectionHeaderHeightPx = dp(28f);
+        recalculateSettingsGeometry();
 
         float defaultHomeStart = contentTopPx + dp(174f);
         float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
@@ -514,6 +523,21 @@ final class LauncherSurface extends View {
         float homeAvailable = homeEnd - homeListStartPx;
         int fit = rowHeightPx <= 0f ? 0 : Math.max(0, (int) Math.floor(homeAvailable / rowHeightPx));
         visibleHomeRowsCache = Math.min(maxHomeApps, fit);
+    }
+
+    private void recalculateSettingsGeometry() {
+        float y = settingsViewportTopPx;
+        int section = 0;
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            if (section < SETTINGS_SECTION_COUNT
+                    && index == SETTINGS_SECTION_STARTS[section]) {
+                settingsSectionBaselines[section] = y + sp(DesignTokens.LABEL_SP);
+                y += settingsSectionHeaderHeightPx;
+                section++;
+            }
+            settingsRowTops[index] = y;
+            y += rowHeightPx;
+        }
     }
 
     private float contentTop() {
@@ -715,17 +739,23 @@ final class LauncherSurface extends View {
     private void drawSettings(Canvas canvas) {
         float x = leftPx;
         float right = rightPx;
-        float top = contentTopPx;
 
         canvas.drawText("SETTINGS", x, settingsTitleBaselinePx, labelPaint);
 
         int save = canvas.save();
         canvas.clipRect(x, settingsViewportTopPx, right, settingsViewportBottomPx);
 
-        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            float y = settingsRowTop(index) - settingsScroll;
-            if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
+        for (int section = 0; section < SETTINGS_SECTION_COUNT; section++) {
+            float baseline = settingsSectionBaselines[section] - settingsScroll;
+            if (baseline >= settingsViewportTopPx - settingsSectionHeaderHeightPx
+                    && baseline <= settingsViewportBottomPx) {
+                canvas.drawText(SETTINGS_SECTION_LABELS[section], x, baseline, labelPaint);
+            }
+        }
 
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float y = settingsRowTops[index] - settingsScroll;
+            if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
             drawSettingsRow(canvas, index, y, x, right);
         }
 
@@ -742,19 +772,31 @@ final class LauncherSurface extends View {
         float baseline = y + rowHeightPx * 0.58f;
         String label = settingsLabel(index);
         String value = settingsValues[index];
+        boolean pressed = index == pressedSettingsIndex;
 
-        canvas.drawText(label, x, baseline, appPaint);
-        if (value != null && !value.isEmpty()) {
-            canvas.drawText(value, right - settingsValueWidths[index], baseline, metaPaint);
+        if (pressed) {
+            canvas.drawRect(x, y, right, y + rowHeightPx, primaryFillPaint);
         }
 
-        canvas.drawRect(
-                x,
-                y + rowHeightPx - dividerThicknessPx,
-                right,
-                y + rowHeightPx,
-                dividerPaint
-        );
+        canvas.drawText(label, x, baseline, pressed ? appInversePaint : appPaint);
+        if (value != null && !value.isEmpty()) {
+            canvas.drawText(
+                    value,
+                    right - settingsValueWidths[index],
+                    baseline,
+                    pressed ? metaInversePaint : metaPaint
+            );
+        }
+
+        if (!pressed) {
+            canvas.drawRect(
+                    x,
+                    y + rowHeightPx - dividerThicknessPx,
+                    right,
+                    y + rowHeightPx,
+                    dividerPaint
+            );
+        }
     }
 
     private String settingsLabel(int index) {
@@ -823,12 +865,7 @@ final class LauncherSurface extends View {
     }
 
     private float settingsRowTop(int index) {
-        float y = settingsViewportTopPx;
-        for (int i = 0; i < index; i++) {
-            y += rowHeightPx;
-            if (i == 3 || i == 12 || i == 15) y += settingsSectionGapPx;
-        }
-        return y;
+        return settingsRowTops[index];
     }
 
     private static String onOff(boolean value) {
@@ -870,7 +907,10 @@ final class LauncherSurface extends View {
                 pressedAppIndex = page == PAGE_APPS
                         ? allAppsIndexAt(downX, downY)
                         : -1;
-                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0) {
+                pressedSettingsIndex = page == PAGE_SETTINGS
+                        ? settingsIndexAt(downX, downY)
+                        : -1;
+                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0 || pressedSettingsIndex >= 0) {
                     postDelayed(longPressRunnable, longPressTimeout);
                     invalidate();
                 }
@@ -941,6 +981,7 @@ final class LauncherSurface extends View {
                 gestureMode = GESTURE_NONE;
                 pressedHomeIndex = -1;
                 pressedAppIndex = -1;
+                pressedSettingsIndex = -1;
                 return true;
 
             default:
@@ -1079,14 +1120,8 @@ final class LauncherSurface extends View {
             return;
         }
 
-        float contentY = y + settingsScroll;
-        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            float rowTop = settingsRowTop(index);
-            if (contentY >= rowTop && contentY < rowTop + rowHeightPx) {
-                handleSettingsRow(index);
-                return;
-            }
-        }
+        int settingsIndex = settingsIndexAt(x, y);
+        if (settingsIndex >= 0) handleSettingsRow(settingsIndex);
     }
 
     private void handleSettingsRow(int index) {
@@ -1117,6 +1152,18 @@ final class LauncherSurface extends View {
             case 18: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
             default: break;
         }
+    }
+
+    private int settingsIndexAt(float x, float y) {
+        if (x < leftPx || x > rightPx) return -1;
+        if (y < settingsViewportTopPx || y >= settingsViewportBottomPx) return -1;
+
+        float contentY = y + settingsScroll;
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float rowTop = settingsRowTops[index];
+            if (contentY >= rowTop && contentY < rowTop + rowHeightPx) return index;
+        }
+        return -1;
     }
 
     private int allAppsIndexAt(float x, float y) {
@@ -1163,16 +1210,19 @@ final class LauncherSurface extends View {
     }
 
     private float maxSettingsScroll() {
-        float contentBottom = settingsRowTop(SETTINGS_ROW_COUNT - 1) + rowHeightPx;
+        float contentBottom = settingsRowTops[SETTINGS_ROW_COUNT - 1] + rowHeightPx;
         float viewport = Math.max(0f, settingsViewportBottomPx - settingsViewportTopPx);
         return Math.max(0f, contentBottom - settingsViewportTopPx - viewport);
     }
 
     private void cancelPendingLongPress() {
-        boolean hadPressed = pressedHomeIndex >= 0 || pressedAppIndex >= 0;
+        boolean hadPressed = pressedHomeIndex >= 0
+                || pressedAppIndex >= 0
+                || pressedSettingsIndex >= 0;
         removeCallbacks(longPressRunnable);
         pressedHomeIndex = -1;
         pressedAppIndex = -1;
+        pressedSettingsIndex = -1;
         if (hadPressed) invalidate();
     }
 
