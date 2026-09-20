@@ -1,5 +1,7 @@
 package com.vslauncher.macrobenchmark;
 
+import android.content.Intent;
+
 import androidx.benchmark.macro.junit4.BaselineProfileRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -82,7 +84,10 @@ public final class BaselineProfileGenerator {
                 rule -> true,
                 scope -> {
                     scope.pressHome(300L);
-                    scope.startActivityAndWait(intent -> Unit.INSTANCE);
+                    scope.startActivityAndWait(new Intent(Intent.ACTION_MAIN)
+                            .addCategory(Intent.CATEGORY_HOME)
+                            .setClassName(PACKAGE, PACKAGE + ".MainActivity")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
                     return Unit.INSTANCE;
                 }
         );
@@ -100,7 +105,10 @@ public final class BaselineProfileGenerator {
                 rule -> true,
                 scope -> {
                     scope.pressHome(300L);
-                    scope.startActivityAndWait(intent -> Unit.INSTANCE);
+                    scope.startActivityAndWait(new Intent(Intent.ACTION_MAIN)
+                            .addCategory(Intent.CATEGORY_HOME)
+                            .setClassName(PACKAGE, PACKAGE + ".MainActivity")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
 
                     // Home -> All Apps, then exercise fling work.
                     swipeLeft();
@@ -123,11 +131,12 @@ public final class BaselineProfileGenerator {
                     // Home -> focused search and filter once.
                     swipeDown();
                     UiObject2 search = device.findObject(By.desc("Search all apps"));
-                    if (search != null) {
-                        search.clear();
-                        search.setText("cal");
-                        device.waitForIdle();
+                    if (search == null) {
+                        throw new IllegalStateException("Search field was not found");
                     }
+                    search.clear();
+                    search.setText("cal");
+                    device.waitForIdle();
 
                     return Unit.INSTANCE;
                 }

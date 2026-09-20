@@ -1,5 +1,7 @@
 package com.vslauncher.macrobenchmark;
 
+import android.content.Intent;
+
 import androidx.benchmark.macro.BaselineProfileMode;
 import androidx.benchmark.macro.CompilationMode;
 import androidx.benchmark.macro.FrameTimingMetric;
@@ -43,7 +45,10 @@ public final class LauncherMacrobenchmark {
     }
 
     private Unit launch(MacrobenchmarkScope scope) {
-        scope.startActivityAndWait(intent -> Unit.INSTANCE);
+        scope.startActivityAndWait(new Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME)
+                .setClassName(PACKAGE, PACKAGE + ".MainActivity")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         return Unit.INSTANCE;
     }
 
