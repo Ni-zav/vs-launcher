@@ -49,6 +49,7 @@ android {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     benchmarkImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
     baselineProfileImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
 }
