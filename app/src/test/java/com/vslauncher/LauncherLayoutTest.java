@@ -6,6 +6,14 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class LauncherLayoutTest {
+    @Test public void alphabetBucketsIncludeFallbackHash() {
+        assertEquals(0, LauncherLayout.alphabetBucket("alpha"));
+        assertEquals(25, LauncherLayout.alphabetBucket("zeta"));
+        assertEquals(26, LauncherLayout.alphabetBucket("1password"));
+        assertEquals(26, LauncherLayout.alphabetBucket("µtorrent"));
+        assertEquals(26, LauncherLayout.alphabetBucket("数字"));
+    }
+
     @Test public void visibleRowsFitCommonPhoneHeights() {
         float[] rowHeights = {44f, 54f, 64f};
         float[] contentHeights = {320f, 480f, 640f, 760f};
