@@ -1,6 +1,6 @@
 # VS Launcher
 
-VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.4 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
+VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.5 keeps the production APK deliberately small: a pure-black Canvas, pure-white typography and linework, direct gestures, no continuous render loop, and no production UI framework.
 
 ## Interaction
 
@@ -43,7 +43,7 @@ Settings stays text-only and scrollable. Tapping a row cycles a small preset or 
 
 ## Search
 
-Search remains a compact O(n) pass performed only when the query changes.
+Search remains a compact O(n) pass performed only when the query changes. Alias data is normalized and cached outside the keystroke path, and ranking is decided in one traversal of visible apps.
 
 Ranking is deterministic:
 
@@ -71,7 +71,8 @@ There are no alpha-gray hierarchy tokens, gradients, blur, shadows, wallpapers, 
 - text size
 - spacing
 - geometry
-- outlines/dividers
+- binary pressed-state inversion
+- dividers only where structure benefits from them
 - placement
 
 The launcher uses Android system fonts only:
@@ -93,7 +94,10 @@ The UI thread should be almost idle while Home is not moving.
 - Paints and Typefaces are created once.
 - Major pixel geometry and hit regions are cached when size, insets, or UI configuration changes.
 - Frequently measured status strings are cached when their underlying state changes.
-- Saved app components use an O(1) lookup map.
+- Saved app components cache their flattened keys and use an O(1) lookup map.
+- Search aliases are cached and normalized outside the TextWatcher hot path.
+- Search ranking is one pass over visible apps while preserving deterministic tier order.
+- Settings row geometry is precomputed when size/configuration changes.
 - App discovery, labels, and sorting run on a dedicated background executor.
 - Weather location/network work runs off the UI thread.
 - All Apps and Settings draw only visible rows.
@@ -152,7 +156,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.4.0-debug.apk
+dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.
@@ -162,9 +166,11 @@ For sideloading, Android Studio, ADB, persistent release signing, and the SVG/ad
 ```text
 MainActivity
 ├── LauncherSurface       Canvas rendering, motion, hit testing
+├── LauncherLayout        pure-Java geometry math used by renderer + JVM tests
 ├── LauncherPreferences   typed persisted configuration + JSON portability
 ├── LauncherUiConfig      immutable render/interaction snapshot
 ├── AppRepository         background app discovery + ranked search
+├── SearchRanking         pure-Java deterministic search tier contract
 └── WeatherService        coarse location, cache, network, weather mapping
 
 macrobenchmark/           physical-device performance tests only
@@ -181,3 +187,6 @@ Future changes should preserve:
 3. no continuous work while the launcher is idle
 4. no production dependency merely for decoration
 5. Home remains black, white, text-first, and visually quiet
+6. Home and Apps use whitespace rather than repetitive row dividers
+7. Settings keeps explicit section structure
+8. draw hot paths do not allocate, measure text, or convert dp/sp
