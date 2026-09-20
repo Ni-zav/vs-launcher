@@ -639,15 +639,18 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
                 surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
+            }
+
+            @Override public void afterTextChanged(Editable s) {
+                // Composing spans are authoritative after the edit has been
+                // applied, so never arm singleton launch from an unfinished
+                // IME composition.
                 scheduleSingleResultLaunch(
                         query,
                         normalizedQuery,
                         searchResults,
                         isImeComposing(s)
                 );
-            }
-
-            @Override public void afterTextChanged(Editable s) {
             }
         });
         search.setOnEditorActionListener((view, actionId, event) -> {
