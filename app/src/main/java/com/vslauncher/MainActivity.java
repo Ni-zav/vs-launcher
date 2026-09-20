@@ -825,7 +825,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 launchExternalIntent(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
                 break;
             case SearchCommand.NOTIFICATIONS:
-                launchExternalIntent(new Intent(Settings.ACTION_NOTIFICATION_SETTINGS));
+                if (Build.VERSION.SDK_INT >= 33) {
+                    launchExternalIntent(new Intent(Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS));
+                } else {
+                    launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
+                }
                 break;
             default:
                 break;
