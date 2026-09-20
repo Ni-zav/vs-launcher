@@ -188,6 +188,7 @@ final class LauncherSurface extends View {
     private boolean searchActive;
     private final int[] alphabetFirstIndex = new int[26];
     private final float[] alphabetWidths = new float[26];
+    private final float[] alphabetActiveWidths = new float[26];
     private boolean alphabetScrubbing;
     private int alphabetActiveIndex = -1;
     private float alphabetTouchLeftPx;
@@ -264,6 +265,7 @@ final class LauncherSurface extends View {
         java.util.Arrays.fill(alphabetFirstIndex, -1);
         for (int i = 0; i < ALPHABET_LABELS.length; i++) {
             alphabetWidths[i] = alphabetPaint.measureText(ALPHABET_LABELS[i]);
+            alphabetActiveWidths[i] = titlePaint.measureText(ALPHABET_LABELS[i]);
         }
 
         statusStrokePaint.setStyle(Paint.Style.STROKE);
@@ -563,8 +565,10 @@ final class LauncherSurface extends View {
         );
         alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
         alphabetRailX = Math.max(0f, getWidth() - dp(8f));
-        alphabetStepPx = Math.max(dp(10f),
-                (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length);
+        alphabetStepPx = Math.max(
+                1f,
+                (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length
+        );
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
         alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
 
@@ -819,7 +823,7 @@ final class LauncherSurface extends View {
             String active = ALPHABET_LABELS[alphabetActiveIndex];
             canvas.drawText(
                     active,
-                    rightPx - alphabetWidths[alphabetActiveIndex],
+                    rightPx - alphabetActiveWidths[alphabetActiveIndex],
                     alphabetActiveBaselinePx,
                     titlePaint
             );
