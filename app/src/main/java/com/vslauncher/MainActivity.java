@@ -373,10 +373,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         ArrayList<AppEntry> resolved = new ArrayList<>(maxHomeApps);
         ArrayList<String> labels = new ArrayList<>(maxHomeApps);
+        ArrayList<String> shortcutIds = new ArrayList<>(maxHomeApps);
         Set<String> used = new HashSet<>();
 
         for (int index = 0; index < maxHomeApps; index++) {
             String componentName = launcherPreferences.homeSlot(index);
+            String shortcutId = launcherPreferences.homeShortcutId(index);
             AppEntry entry = findHomeEligibleApp(componentName);
 
             if (componentName == null && !launcherPreferences.hasHomeSlot(index)) {
@@ -387,11 +389,21 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             }
 
             resolved.add(entry);
+            shortcutIds.add(shortcutId == null ? "" : shortcutId);
             if (entry != null) {
                 String component = entry.componentKey;
-                String alias = aliases.get(component);
-                labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
-                used.add(component);
+                if (shortcutId != null && !shortcutId.isEmpty()) {
+                    String shortcutLabel = launcherPreferences.homeShortcutLabel(index);
+                    labels.add(
+                            shortcutLabel == null || shortcutLabel.isEmpty()
+                                    ? entry.label
+                                    : shortcutLabel
+                    );
+                } else {
+                    String alias = aliases.get(component);
+                    labels.add(alias == null || alias.isEmpty() ? entry.label : alias);
+                    used.add(component);
+                }
             } else if (componentName != null && !componentName.isEmpty()) {
                 labels.add(unavailableHomeLabel(componentName));
             } else {
@@ -414,6 +426,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setHomeConfiguration(
                 homeApps,
                 Collections.unmodifiableList(labels),
+                Collections.unmodifiableList(shortcutIds),
                 maxHomeApps,
                 quickLabel
         );
@@ -855,6 +868,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         launchApp(app);
     }
 
+    @Override public void onOpenHomeShortcut(AppEntry app, String shortcutId) {
+        if (!appRepository.startShortcut(app, shortcutId)) reloadApps();
+    }
+
     @Override public void onSearchResultTapped(SearchResult result) {
         executeSearchResult(result);
     }
@@ -888,6 +905,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         int shortcutActionCount = actions.size();
+        if (shortcutActionCount > 0 && ProfilePolicy.canPersistOnHome(app.profileKind)) {
+            actions.add("Pin shortcut…");
+        }
         if (ProfilePolicy.canPersistOnHome(app.profileKind)) actions.add("Add to Home");
         actions.add("Hide");
         actions.add("App info");
@@ -905,6 +925,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
                     String action = actions.get(which);
                     switch (action) {
+                        case "Pin shortcut…":
+                            showShortcutPinPicker(app, shortcutActions);
+                            break;
                         case "Add to Home":
                             showAddToHomeSlotPicker(app);
                             break;
@@ -1100,10 +1123,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         actions.add("Change app");
 
         AppEntry current = slot < homeApps.size() ? homeApps.get(slot) : null;
-        if (current != null) actions.add("Rename");
+        String currentShortcutId = launcherPreferences.homeShortcutId(slot);
+        boolean shortcutSlot = currentShortcutId != null && !currentShortcutId.isEmpty();
+        if (current != null && !shortcutSlot) actions.add("Rename");
         if (slot > 0) actions.add("Move up");
         if (slot + 1 < maxHomeApps) actions.add("Move down");
-        actions.add("Clear slot");
+        actions.add(shortcutSlot ? "Remove shortcut" : "Clear slot");
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home slot " + (slot + 1))
@@ -1125,7 +1150,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             resolveLauncherConfiguration();
                             break;
                         case "Clear slot":
-                            launcherPreferences.clearHomeSlot(slot);
+                        case "Remove shortcut":
+                            clearHomeSlotAndRepin(slot);
                             resolveLauncherConfiguration();
                             break;
                         default:
@@ -1147,10 +1173,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 .setTitle("Home app " + (slot + 1))
                 .setItems(labels, (dialog, which) -> {
                     AppEntry selected = eligible.get(which);
-                    launcherPreferences.setHomeSlot(
-                            slot,
-                            selected.componentKey
-                    );
+                    AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+                    launcherPreferences.setHomeSlot(slot, selected.componentKey);
+                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
@@ -1204,14 +1229,123 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Add " + app.pickerLabel())
                 .setItems(slots, (dialog, which) -> {
-                    launcherPreferences.setHomeSlot(
-                            which,
-                            app.componentKey
-                    );
+                    AppEntry oldShortcutApp = shortcutAppAtSlot(which);
+                    launcherPreferences.setHomeSlot(which, app.componentKey);
+                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
                     resolveLauncherConfiguration();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void showShortcutPinPicker(AppEntry app, List<ShortcutInfo> shortcuts) {
+        if (shortcuts.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[shortcuts.size()];
+        for (int i = 0; i < shortcuts.size(); i++) {
+            CharSequence shortLabel = shortcuts.get(i).getShortLabel();
+            labels[i] = shortLabel == null || shortLabel.length() == 0
+                    ? "Shortcut"
+                    : shortLabel;
+        }
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Pin shortcut")
+                .setItems(labels, (dialog, which) ->
+                        showShortcutHomeSlotPicker(app, shortcuts.get(which)))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showShortcutHomeSlotPicker(AppEntry app, ShortcutInfo shortcut) {
+        CharSequence[] slots = new CharSequence[maxHomeApps];
+        for (int i = 0; i < maxHomeApps; i++) {
+            String label = i < homeApps.size() && homeApps.get(i) != null
+                    ? surfaceHomeLabel(i)
+                    : "Empty";
+            slots[i] = (i + 1) + " · " + label;
+        }
+
+        CharSequence shortLabel = shortcut.getShortLabel();
+        String label = shortLabel == null || shortLabel.length() == 0
+                ? app.label
+                : shortLabel.toString();
+
+        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
+                .setTitle("Pin " + label)
+                .setItems(slots, (dialog, slot) ->
+                        pinShortcutToHome(app, shortcut.getId(), label, slot))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private String surfaceHomeLabel(int slot) {
+        String shortcutLabel = launcherPreferences.homeShortcutLabel(slot);
+        if (shortcutLabel != null && !shortcutLabel.isEmpty()) return shortcutLabel;
+
+        AppEntry existing = slot < homeApps.size() ? homeApps.get(slot) : null;
+        if (existing == null) return "Empty";
+        String alias = aliases.get(existing.componentKey);
+        return alias == null || alias.isEmpty() ? existing.label : alias;
+    }
+
+    private void pinShortcutToHome(
+            AppEntry app,
+            String shortcutId,
+            String label,
+            int slot
+    ) {
+        if (app == null || shortcutId == null || shortcutId.isEmpty()) return;
+
+        ArrayList<String> targetPinned = shortcutIdsForPackage(app, slot, shortcutId);
+        if (!appRepository.pinShortcuts(app, targetPinned)) {
+            Toast.makeText(this, "Shortcut could not be pinned", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+        launcherPreferences.setHomeShortcut(slot, app.componentKey, shortcutId, label);
+        if (oldShortcutApp != null
+                && !oldShortcutApp.componentKey.equals(app.componentKey)) {
+            repinPackageShortcuts(oldShortcutApp);
+        }
+        resolveLauncherConfiguration();
+    }
+
+    private ArrayList<String> shortcutIdsForPackage(
+            AppEntry app,
+            int replacingSlot,
+            String replacementId
+    ) {
+        HashSet<String> ids = new HashSet<>();
+        for (int i = 0; i < LauncherPreferences.MAX_HOME_APPS; i++) {
+            if (i == replacingSlot) continue;
+            if (!app.componentKey.equals(launcherPreferences.homeSlot(i))) continue;
+            String id = launcherPreferences.homeShortcutId(i);
+            if (id != null && !id.isEmpty()) ids.add(id);
+        }
+        if (replacementId != null && !replacementId.isEmpty()) ids.add(replacementId);
+        return new ArrayList<>(ids);
+    }
+
+    private AppEntry shortcutAppAtSlot(int slot) {
+        String id = launcherPreferences.homeShortcutId(slot);
+        if (id == null || id.isEmpty()) return null;
+        return findApp(launcherPreferences.homeSlot(slot));
+    }
+
+    private void repinPackageShortcuts(AppEntry app) {
+        if (app == null) return;
+        appRepository.pinShortcuts(
+                app,
+                shortcutIdsForPackage(app, -1, null)
+        );
+    }
+
+    private void clearHomeSlotAndRepin(int slot) {
+        AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+        launcherPreferences.clearHomeSlot(slot);
+        if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
     }
 
     private void openAppInfo(AppEntry app) {
