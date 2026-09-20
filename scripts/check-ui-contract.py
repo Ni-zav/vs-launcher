@@ -153,6 +153,19 @@ single_app_result = method_body(main, "singleAppResult")
 if "blocksAppAutoLaunch()" not in single_app_result:
     errors.append("Singleton app auto-launch must stop for explicit structured utility rows")
 
+single_launch = method_body(main, "scheduleSingleResultLaunch")
+for required in (
+    "currentRawQuery",
+    "searchEditGeneration",
+    "SearchAutoLaunchPolicy.delayMs(",
+    "isImeComposing",
+):
+    if required not in single_launch:
+        errors.append(f"Intent-aware singleton launch contract missing {required}")
+
+if "160L" in single_launch:
+    errors.append("Singleton auto-launch must not regress to the old fixed 160ms trigger")
+
 build_results = method_body(main, "buildSearchResults")
 for required in (
     "SearchCommand.matchingNormalized(normalizedQuery)",
@@ -161,11 +174,24 @@ for required in (
     if required not in build_results:
         errors.append(f"Search actions must reuse the cached normalized query: missing {required}")
 
+for required in (
+    "results.add(0, SearchResult.calculation",
+    "results.add(0, SearchResult.timer",
+    "results.add(0, SearchResult.alarm",
+    "results.add(0, SearchResult.url",
+    "results.add(0, SearchResult.dial",
+    "results.add(0, SearchResult.web",
+    "SearchAutoLaunchPolicy.shouldOfferWebFallback(",
+):
+    if required not in build_results:
+        errors.append(f"Explicit structured intent must retain result priority: missing {required}")
+
 for utility in (
     "QueryActions.java",
     "TimeQueryActions.java",
     "CalculatorAction.java",
     "SearchCommand.java",
+    "SearchAutoLaunchPolicy.java",
 ):
     utility_text = (MAIN_SRC / "com/vslauncher" / utility).read_text(encoding="utf-8")
     for forbidden in (
@@ -180,6 +206,21 @@ for utility in (
     ):
         if forbidden in utility_text:
             errors.append(f"{utility} must stay local and I/O-free; found {forbidden}")
+
+auto_launch_policy = (
+    MAIN_SRC / "com/vslauncher/SearchAutoLaunchPolicy.java"
+).read_text(encoding="utf-8")
+for forbidden in (
+    "List<",
+    "for (AppEntry",
+    "while (",
+    "Pattern",
+    "SearchNormalization.normalize(",
+):
+    if forbidden in auto_launch_policy:
+        errors.append(
+            f"SearchAutoLaunchPolicy must stay bounded/O(1) after filtering; found {forbidden}"
+        )
 
 manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "android.permission.QUERY_ALL_PACKAGES" in manifest:
