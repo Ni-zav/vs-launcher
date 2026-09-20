@@ -7,6 +7,8 @@ final class SearchResult {
     static final int TYPE_URL = 3;
     static final int TYPE_TIMER = 4;
     static final int TYPE_ALARM = 5;
+    static final int TYPE_CALC = 6;
+    static final int TYPE_WEB = 7;
 
     final int type;
     final AppEntry app;
@@ -74,6 +76,14 @@ final class SearchResult {
                 "ALARM",
                 spec.hour + ":" + spec.minute
         );
+    }
+
+    static SearchResult calculation(String result) {
+        return new SearchResult(TYPE_CALC, null, "calc", result, "CALC", result);
+    }
+
+    static SearchResult web(String query) {
+        return new SearchResult(TYPE_WEB, null, "web", "Search web", "WEB", query);
     }
 
     boolean isApp() {

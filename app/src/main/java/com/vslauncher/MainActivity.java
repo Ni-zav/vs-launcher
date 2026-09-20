@@ -3,8 +3,11 @@ package com.vslauncher;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -738,6 +741,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarm(rawQuery);
             if (alarm != null) results.add(SearchResult.alarm(alarm));
+
+            String calculation = CalculatorAction.evaluate(rawQuery);
+            if (calculation != null) results.add(SearchResult.calculation(calculation));
+
+            if (results.isEmpty() && normalizedQuery.length() >= 2) {
+                results.add(SearchResult.web(rawQuery.trim()));
+            }
         }
 
         return results.isEmpty()
@@ -794,6 +804,31 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     if (launchExternalIntent(alarm)) showTransientStatus("Alarm set · " + result.payload);
                 } catch (NumberFormatException ignored) {
                 }
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_CALC) {
+            ClipboardManager clipboard =
+                    (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Calculation", result.payload));
+                showTransientStatus("Copied · " + result.payload);
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_WEB) {
+            Intent web = new Intent(Intent.ACTION_WEB_SEARCH)
+                    .putExtra(SearchManager.QUERY, result.payload);
+            if (!launchExternalIntent(web)) {
+                Uri fallback = new Uri.Builder()
+                        .scheme("https")
+                        .authority("www.google.com")
+                        .path("search")
+                        .appendQueryParameter("q", result.payload)
+                        .build();
+                launchExternalIntent(new Intent(Intent.ACTION_VIEW, fallback));
             }
             return;
         }
