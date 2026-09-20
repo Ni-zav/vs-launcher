@@ -1,13 +1,50 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-09-20
+
+### Search-core performance
+
+- Typed input is normalized exactly once per edit and the cached normalized value is reused by app filtering, command matching, alarm parsing, result emphasis, and singleton launch validation.
+- `AppRepository.filterNormalized()` keeps the existing single traversal of the searchable app list.
+- Static command labels/keywords remain pre-normalized rather than being normalized again while typing.
+- CI now guards against extra normalization, sorting/streams in the app-filter pass, I/O/package access from utility parsers, and accessibility work inside draw hot paths.
+- Added a deterministic 1,000-entry JVM ranking workload without timing-sensitive thresholds.
+
+### Latent utility actions
+
+- Added explicit timer parsing such as `timer 10m`, `timer 45s`, and `timer 1h 30m`.
+- Added explicit 24-hour alarm parsing such as `alarm 07:30` and `set alarm 18.45`.
+- Timer/alarm execution delegates to Android `AlarmClock` intents; VS adds no scheduler/background service.
+- Added bounded local arithmetic such as `23*17`, parentheses, division, and modulo.
+- CALC results copy only after deliberate tap/Go and reuse the existing transient feedback surface.
+- Added explicit `Search web` fallback only when no app/system/direct utility already matches; VS performs no web request itself.
+
+### Help / discoverability
+
+- Added searchable `help` / `how to use` / `guide` command.
+- Added a bottom Settings `HELP → How to use` row that opens the same compact guide.
+- The guide documents Home gestures, Search/Browse, A–Z, long-press actions, utility query examples, and progressive Back behavior.
+
+### Canvas accessibility
+
+- Added a lazy platform `AccessibilityNodeProvider` for Home status/actions, Home rows, visible Apps/search rows, profile headers, Settings rows, browse-to-search, and transient Undo.
+- Virtual nodes reuse cached state/geometry and are created only when Android accessibility services request them.
+- Accessibility scrolling is supported for Apps and Settings.
+- No accessibility object creation, service polling loop, or node work was added to `onDraw()`.
 
 ### Calm visual follow-up
 
 - Removed per-row Settings dividers; section labels and whitespace now carry grouping.
 - Added a 16dp visual lead before WORK/PRIVATE profile headers without adding another persistent row or container.
 - Kept empty-query search rows uniform; the first result is promoted only after a normalized query is actually present.
-- Added CI source guards for these rendering invariants.
+
+### Compatibility / release
+
+- Existing 0.7 preferences/JSON configuration remain compatible; no migration is required.
+- No gesture was reassigned and no Home pixel was added for the new utilities.
+- Minimum SDK, package name, Private Space policy, Home-slot semantics, and Android 15+ startup order are unchanged.
+- Bumped app version to `0.8.0` / versionCode `8`.
+- Updated weather User-Agent to `VS-Launcher/0.8`.
 
 ## 0.7.0 — 2026-09-20
 

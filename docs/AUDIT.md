@@ -150,35 +150,36 @@ This preserves the Android 15+ startup fix used on the current target device.
 Before merging launcher behavior/rendering changes:
 
 1. `gradle --no-daemon :app:assembleDebug :app:lintDebug`
-2. Confirm CI publishes the debug APK artifact.
-3. Install on a physical Android 15+ device.
+2. Confirm CI publishes the debug APK artifact and passes the UI/performance source contract.
+3. Install on a physical Android 15+ device when device validation is available.
 4. Verify launcher selection after pressing Home.
-5. Repeatedly swipe Settings ↔ Home ↔ All Apps.
-6. Fling long All Apps and Settings lists.
+5. Repeatedly swipe Settings ↔ Home ↔ Apps.
+6. Fling long Apps and Settings lists.
 7. Verify swipe-left enters focused search and requests the keyboard.
 8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
 9. Verify A–Z + # scrubbing jumps to the nearest available initial and missing buckets stay visually quieter.
 10. Test accent/punctuation normalization plus prefix/alias/initials/substring/bounded-fuzzy ordering.
-11. Verify a lone app auto-launches even with command rows present; command-only results never auto-fire.
-12. Verify SYSTEM queries plus DIAL/OPEN query actions execute only after deliberate tap/Go.
-13. Pin a native app shortcut into Home, launch it, replace/remove it, Undo removal, export/import it, and verify package pin state remains sane.
-14. Change, rename, move, and clear Home slots; tap + ADD APP directly; verify clear has transient Undo.
-15. Hide an app from long-press and verify transient Undo restores it.
-16. Verify the semantic monochrome scale and no full-row white press inversion.
-17. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
-18. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
-12. Test quick-launch selection.
-13. Test all position/density/text presets.
-14. Toggle each status module and cycle its format/layout modes.
-15. Test instant/fast/normal page motion and haptics off/on.
-16. Export and re-import configuration.
-17. Install/uninstall an app and confirm indexing/state remains safe.
-18. Test 12h/24h/system time and all date styles.
-19. Test battery charging/unplugged states and display modes.
-20. Test weather permission denied/granted, location disabled, offline cache, refresh.
-21. Test IME/system insets and Android 15+ fullscreen startup.
-22. Run the Macrobenchmark suite on the same physical device before/after performance-sensitive changes.
-
+11. Verify a lone app auto-launches even with command rows present; non-app results never auto-fire.
+12. Verify typed search follows the cached normalized-query path.
+13. Verify SYSTEM plus DIAL/OPEN actions execute only after deliberate tap/Go.
+14. Verify `timer 10m`, `timer 1h 30m`, and `alarm 07:30` produce deliberate TIMER/ALARM rows.
+15. Verify `23*17`, parentheses, divide-by-zero rejection, and CALC copy feedback.
+16. Verify an unmatched ordinary query produces exactly one explicit WEB fallback and VS performs no network request itself.
+17. Type `help` and open Settings → HELP → How to use; confirm both expose the same interaction model.
+18. Pin a native app shortcut into Home, launch it, replace/remove it, Undo removal, export/import it, and verify package pin state remains sane.
+19. Change, rename, move, and clear Home slots; tap + ADD APP directly; verify clear has transient Undo.
+20. Hide an app from long-press and verify transient Undo restores it.
+21. Verify the semantic monochrome scale, dividerless Settings rows, profile-header spacing, and no full-row white press inversion.
+22. Hide/unhide apps and verify assigned hidden personal/work apps remain launchable.
+23. If present, verify WORK/PRIVATE containers and that locked Private Space apps never enter search or persistent Home/quick-launch state.
+24. Test quick-launch selection, all position/density/text presets, animation speeds, and haptics.
+25. Toggle each status module and cycle its format/layout modes.
+26. Export and re-import configuration from a 0.7-era config and confirm no migration is required.
+27. Install/uninstall an app and confirm indexing/state remains safe.
+28. Test 12h/24h/system time, date styles, battery states/modes, and weather permission/offline paths.
+29. Test IME/system insets and Android 15+ fullscreen startup.
+30. With TalkBack/touch exploration available, verify Home/status, visible Apps/search rows, profile headers, Settings, scrolling, long-click actions, browse-to-search, and transient Undo are reachable without changing visual rendering.
+31. Run the Macrobenchmark suite on the same physical device before/after performance-sensitive changes when the device controller permits it.
 ## Measurement boundary
 
 Build + lint prove source/API correctness, not a universal FPS number.
