@@ -317,7 +317,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         ArrayList<AppEntry> visible = new ArrayList<>(allApps.size());
         for (AppEntry app : allApps) {
             if (hidden.contains(app.componentKey)) continue;
-            if (app.profileKind == AppEntry.PROFILE_PRIVATE && !privateVisible) continue;
+            if (!ProfilePolicy.visibleInApps(app.profileKind, privateVisible)) continue;
             visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
@@ -339,14 +339,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         boolean privateVisible = launcherPreferences.privateSpaceVisible();
         for (LauncherProfile profile : launcherProfiles) {
             if (profile.kind == AppEntry.PROFILE_PERSONAL) continue;
-            if (profile.kind == AppEntry.PROFILE_PRIVATE && !privateVisible) continue;
+            if (!ProfilePolicy.visibleInApps(profile.kind, privateVisible)) continue;
 
-            String value = "";
-            if (profile.kind == AppEntry.PROFILE_PRIVATE) {
-                value = profile.quiet ? "LOCKED" : "LOCK";
-            } else if (profile.kind == AppEntry.PROFILE_WORK) {
-                value = profile.quiet ? "PAUSED" : "PAUSE";
-            }
+            String value = ProfilePolicy.headerValue(profile.kind, profile.quiet);
             rows.add(AppListItem.profile(
                     profile.kind,
                     profile.serial,
@@ -415,7 +410,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry firstUnusedApp(Set<String> used) {
         for (AppEntry app : apps) {
-            if (app.profileKind == AppEntry.PROFILE_PRIVATE) continue;
+            if (!ProfilePolicy.canPersistOnHome(app.profileKind)) continue;
             String component = app.componentKey;
             if (!used.contains(component)) return app;
         }
@@ -429,13 +424,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private AppEntry findHomeEligibleApp(String componentKey) {
         AppEntry app = findApp(componentKey);
-        return app != null && app.profileKind != AppEntry.PROFILE_PRIVATE ? app : null;
+        return app != null && ProfilePolicy.canPersistOnHome(app.profileKind) ? app : null;
     }
 
     private List<AppEntry> homeEligibleApps() {
         ArrayList<AppEntry> eligible = new ArrayList<>(allApps.size());
         for (AppEntry app : allApps) {
-            if (app.profileKind != AppEntry.PROFILE_PRIVATE) eligible.add(app);
+            if (ProfilePolicy.canPersistOnHome(app.profileKind)) eligible.add(app);
         }
         return eligible;
     }
@@ -734,7 +729,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         int shortcutActionCount = actions.size();
-        if (app.profileKind != AppEntry.PROFILE_PRIVATE) actions.add("Add to Home");
+        if (ProfilePolicy.canPersistOnHome(app.profileKind)) actions.add("Add to Home");
         actions.add("Hide");
         actions.add("App info");
         if (app.isPersonal()) actions.add("Uninstall");
