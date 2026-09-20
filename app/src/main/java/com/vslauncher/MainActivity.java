@@ -87,6 +87,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private List<AppEntry> homeApps = Collections.emptyList();
     private AppEntry quickApp;
     private String query = "";
+    private String normalizedQuery = "";
     private String latestWeatherText = "Tap for weather";
     private int bottomInset;
     private int maxHomeApps = 5;
@@ -332,10 +333,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
-        searchResults = buildSearchResults(query, filteredApps);
+        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setApps(apps, filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -592,10 +593,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void addSearch(boolean focus) {
         surface.setSearchActive(true);
-        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
-        searchResults = buildSearchResults(query, filteredApps);
+        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -627,9 +628,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         normalizedAliases,
                         aliasInitials
                 );
-                searchResults = buildSearchResults(query, filteredApps);
+                searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+                surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
                 scheduleSingleResultLaunch(query, searchResults);
             }
 
@@ -686,11 +687,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         cancelPendingSingleResultLaunch();
         if (search == null) {
             query = "";
+            normalizedQuery = "";
             surface.setSearchActive(false);
             filteredApps = apps;
             searchResults = Collections.emptyList();
             surface.setFilteredApps(filteredApps);
-            surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+            surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
             return;
         }
 
@@ -701,15 +703,17 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         root.removeView(search);
         search = null;
         query = "";
+        normalizedQuery = "";
         surface.setSearchActive(false);
         filteredApps = apps;
         searchResults = Collections.emptyList();
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
     }
 
     private List<SearchResult> buildSearchResults(
             String rawQuery,
+            String normalizedQuery,
             List<AppEntry> appMatches
     ) {
         ArrayList<SearchResult> results = new ArrayList<>(
@@ -717,8 +721,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         );
         for (AppEntry app : appMatches) results.add(SearchResult.app(app));
 
-        if (!SearchNormalization.normalize(rawQuery).isEmpty()) {
-            for (SearchCommand command : SearchCommand.matching(rawQuery)) {
+        if (!normalizedQuery.isEmpty()) {
+            for (SearchCommand command : SearchCommand.matchingNormalized(normalizedQuery)) {
                 results.add(SearchResult.command(command));
             }
 
@@ -842,12 +846,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void scheduleSingleResultLaunch(
-            String currentQuery,
+            String currentNormalizedQuery,
             List<SearchResult> currentResults
     ) {
         cancelPendingSingleResultLaunch();
-        String normalizedQuery = SearchNormalization.normalize(currentQuery);
-        if (normalizedQuery.isEmpty()) return;
+        if (currentNormalizedQuery.isEmpty()) return;
 
         SearchResult onlyApp = singleAppResult(currentResults);
         if (onlyApp == null) return;
@@ -856,7 +859,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
-                    || !normalizedQuery.equals(SearchNormalization.normalize(query))
+                    || !currentNormalizedQuery.equals(normalizedQuery)
                     || singleAppResult(searchResults) != onlyApp) {
                 return;
             }

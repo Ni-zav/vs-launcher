@@ -18,6 +18,12 @@ public final class SearchCommandTest {
         assertTrue(SearchCommand.matching("w").isEmpty());
     }
 
+    @Test public void preNormalizedCommandPathAvoidsRenormalizationContract() {
+        assertTrue(SearchCommand.matchingNormalized("blu").stream()
+                .anyMatch(command -> SearchCommand.BLUETOOTH.equals(command.id)));
+        assertTrue(SearchCommand.matchingNormalized("x").isEmpty());
+    }
+
     @Test public void recognizesSafeDialPayload() {
         assertEquals("+628123456789", QueryActions.dialPayload("+62 812-3456-789"));
         assertNull(QueryActions.dialPayload("12"));

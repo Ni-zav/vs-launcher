@@ -83,6 +83,17 @@ for forbidden in ("SharedPreferences", "PackageManager", "LauncherApps", "launch
 text_changed = method_body(main, "onTextChanged")
 if "launcherPreferences.aliases()" in text_changed or "getAll()" in text_changed:
     errors.append("Search TextWatcher must not read SharedPreferences aliases")
+if text_changed.count("SearchNormalization.normalize(") != 1:
+    errors.append("Search TextWatcher must normalize the typed query exactly once")
+if "AppRepository.filter(" in text_changed:
+    errors.append("Search TextWatcher must pass the cached normalized query to filterNormalized")
+
+filter_normalized = method_body(
+    (MAIN_SRC / "com/vslauncher/AppRepository.java").read_text(encoding="utf-8"),
+    "filterNormalized",
+)
+if "SearchNormalization.normalize(" in filter_normalized:
+    errors.append("filterNormalized must not normalize the query again")
 
 manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "android.permission.QUERY_ALL_PACKAGES" in manifest:
