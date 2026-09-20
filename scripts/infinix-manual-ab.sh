@@ -404,9 +404,13 @@ run_all() {
   fi
 
   if [[ $installed -eq 1 ]]; then
-    cleanup_session "$session" || {
-      [[ $status -ne 0 ]] || status=$?
-    }
+    set +e
+    cleanup_session "$session"
+    local cleanup_status=$?
+    set -e
+    if [[ $cleanup_status -ne 0 && $status -eq 0 ]]; then
+      status=$cleanup_status
+    fi
   fi
 
   record_device_state "$session/device-session-end.txt" || true
