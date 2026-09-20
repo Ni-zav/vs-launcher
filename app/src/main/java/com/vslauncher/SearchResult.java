@@ -5,6 +5,8 @@ final class SearchResult {
     static final int TYPE_COMMAND = 1;
     static final int TYPE_DIAL = 2;
     static final int TYPE_URL = 3;
+    static final int TYPE_TIMER = 4;
+    static final int TYPE_ALARM = 5;
 
     final int type;
     final AppEntry app;
@@ -50,6 +52,28 @@ final class SearchResult {
 
     static SearchResult url(String url) {
         return new SearchResult(TYPE_URL, null, "url", url, "OPEN", url);
+    }
+
+    static SearchResult timer(TimeQueryActions.TimerSpec spec) {
+        return new SearchResult(
+                TYPE_TIMER,
+                null,
+                "timer",
+                "Start " + spec.display + " timer",
+                "TIMER",
+                Integer.toString(spec.seconds)
+        );
+    }
+
+    static SearchResult alarm(TimeQueryActions.AlarmSpec spec) {
+        return new SearchResult(
+                TYPE_ALARM,
+                null,
+                "alarm",
+                "Set alarm " + spec.display,
+                "ALARM",
+                spec.hour + ":" + spec.minute
+        );
     }
 
     boolean isApp() {

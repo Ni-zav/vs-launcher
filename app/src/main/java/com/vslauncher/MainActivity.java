@@ -732,6 +732,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
             String url = QueryActions.urlPayload(rawQuery);
             if (url != null) results.add(SearchResult.url(url));
+
+            TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
+            if (timer != null) results.add(SearchResult.timer(timer));
+
+            TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarm(rawQuery);
+            if (alarm != null) results.add(SearchResult.alarm(alarm));
         }
 
         return results.isEmpty()
@@ -758,6 +764,37 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         if (result.type == SearchResult.TYPE_URL) {
             launchExternalIntent(new Intent(Intent.ACTION_VIEW, Uri.parse(result.payload)));
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_TIMER) {
+            try {
+                int seconds = Integer.parseInt(result.payload);
+                Intent timer = new Intent(AlarmClock.ACTION_SET_TIMER)
+                        .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                        .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
+                        .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
+                if (launchExternalIntent(timer)) showTransientStatus("Timer set");
+            } catch (NumberFormatException ignored) {
+            }
+            return;
+        }
+
+        if (result.type == SearchResult.TYPE_ALARM) {
+            String[] parts = result.payload.split(":", 2);
+            if (parts.length == 2) {
+                try {
+                    int hour = Integer.parseInt(parts[0]);
+                    int minute = Integer.parseInt(parts[1]);
+                    Intent alarm = new Intent(AlarmClock.ACTION_SET_ALARM)
+                            .putExtra(AlarmClock.EXTRA_HOUR, hour)
+                            .putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                            .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
+                            .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
+                    if (launchExternalIntent(alarm)) showTransientStatus("Alarm set · " + result.payload);
+                } catch (NumberFormatException ignored) {
+                }
+            }
             return;
         }
 
@@ -1456,6 +1493,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         undoAction = action;
         surface.setTransientMessage(message, true);
 
+        pendingUndoClear = this::clearUndo;
+        mainHandler.postDelayed(pendingUndoClear, 2500L);
+    }
+
+    private void showTransientStatus(String message) {
+        clearUndo();
+        surface.setTransientMessage(message, false);
         pendingUndoClear = this::clearUndo;
         mainHandler.postDelayed(pendingUndoClear, 2500L);
     }
