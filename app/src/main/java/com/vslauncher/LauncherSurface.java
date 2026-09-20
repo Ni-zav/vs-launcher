@@ -70,7 +70,7 @@ final class LauncherSurface extends View {
 
     private static final String[] ALPHABET_LABELS = {
             "A","B","C","D","E","F","G","H","I","J","K","L","M",
-            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
+            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"
     };
 
     private static final int GESTURE_NONE = 0;
@@ -88,6 +88,8 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint alphabetPaint =
             textPaint(9f, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint alphabetUnavailablePaint =
+            textPaint(9f, DesignTokens.TEXT_DISABLED, DesignTokens.LABEL);
     private final Paint appPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
     private final Paint appPrimaryPaint =
@@ -101,6 +103,9 @@ final class LauncherSurface extends View {
     private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
     private final Paint statusFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
+    private final Paint batteryFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
+    private final Paint batteryTextPaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
     private final Paint batteryStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
@@ -200,9 +205,9 @@ final class LauncherSurface extends View {
     private float settingsScroll;
     private int hiddenAppCount;
     private boolean searchActive;
-    private final int[] alphabetFirstIndex = new int[26];
-    private final float[] alphabetWidths = new float[26];
-    private final float[] alphabetActiveWidths = new float[26];
+    private final int[] alphabetFirstIndex = new int[27];
+    private final float[] alphabetWidths = new float[27];
+    private final float[] alphabetActiveWidths = new float[27];
     private boolean alphabetScrubbing;
     private int alphabetActiveIndex = -1;
     private float alphabetTouchLeftPx;
@@ -340,7 +345,13 @@ final class LauncherSurface extends View {
         batteryLevel = level;
         charging = isCharging;
         batteryText = level < 0 ? "—" : level + "%";
-        batteryTextWidth = metaPaint.measureText(batteryText);
+        int batteryColor = level >= 0 && level <= 20 && !isCharging
+                ? DesignTokens.TEXT_PRIMARY
+                : DesignTokens.TEXT_SECONDARY;
+        batteryTextPaint.setColor(batteryColor);
+        batteryStrokePaint.setColor(batteryColor);
+        batteryFillPaint.setColor(batteryColor);
+        batteryTextWidth = batteryTextPaint.measureText(batteryText);
         invalidateHome();
     }
 
@@ -420,8 +431,7 @@ final class LauncherSurface extends View {
         String normalized = app.normalizedLabel;
         if (normalized.isEmpty()) return;
         char first = Character.toUpperCase(normalized.charAt(0));
-        if (first < 'A' || first > 'Z') return;
-        int bucket = first - 'A';
+        int bucket = first >= 'A' && first <= 'Z' ? first - 'A' : 26;
         if (alphabetFirstIndex[bucket] < 0) alphabetFirstIndex[bucket] = row;
     }
 
@@ -742,11 +752,11 @@ final class LauncherSurface extends View {
             if (icon && percent) {
                 float batteryTextX = right - batteryTextWidth;
                 drawBattery(canvas, batteryTextX - batteryTextGapPx, statusBaseline - batteryTopOffsetPx);
-                canvas.drawText(batteryText, batteryTextX, statusBaseline, metaPaint);
+                canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
             } else if (icon) {
                 drawBattery(canvas, right - batteryOnlyRightInsetPx, statusBaseline - batteryTopOffsetPx);
             } else {
-                canvas.drawText(batteryText, right - batteryTextWidth, statusBaseline, metaPaint);
+                canvas.drawText(batteryText, right - batteryTextWidth, statusBaseline, batteryTextPaint);
             }
         }
 
@@ -793,7 +803,7 @@ final class LauncherSurface extends View {
                 x + batteryWidthPx + batteryTerminalGapPx + batteryTerminalWidthPx,
                 y + batteryHeightPx - batteryTerminalInsetPx
         );
-        canvas.drawRoundRect(rect, dividerThicknessPx, dividerThicknessPx, statusFillPaint);
+        canvas.drawRoundRect(rect, dividerThicknessPx, dividerThicknessPx, batteryFillPaint);
 
         if (batteryLevel >= 0) {
             float innerWidth = batteryWidthPx - batteryInnerInsetPx * 2f;
@@ -809,7 +819,7 @@ final class LauncherSurface extends View {
                         rect,
                         batteryInnerRadiusPx,
                         batteryInnerRadiusPx,
-                        statusFillPaint
+                        batteryFillPaint
                 );
             }
         }
@@ -873,7 +883,7 @@ final class LauncherSurface extends View {
                     ALPHABET_LABELS[i],
                     alphabetRailX - alphabetWidths[i],
                     baseline,
-                    alphabetPaint
+                    alphabetFirstIndex[i] >= 0 ? alphabetPaint : alphabetUnavailablePaint
             );
         }
 
