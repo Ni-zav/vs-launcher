@@ -34,6 +34,37 @@ final class AppRepository {
     private final LauncherApps launcherApps;
     private final UserManager userManager;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private Runnable changeCallback;
+    private boolean launcherCallbackRegistered;
+    private final LauncherApps.Callback launcherCallback = new LauncherApps.Callback() {
+        @Override public void onPackageRemoved(String packageName, UserHandle user) {
+            notifyChanged();
+        }
+
+        @Override public void onPackageAdded(String packageName, UserHandle user) {
+            notifyChanged();
+        }
+
+        @Override public void onPackageChanged(String packageName, UserHandle user) {
+            notifyChanged();
+        }
+
+        @Override public void onPackagesAvailable(
+                String[] packageNames,
+                UserHandle user,
+                boolean replacing
+        ) {
+            notifyChanged();
+        }
+
+        @Override public void onPackagesUnavailable(
+                String[] packageNames,
+                UserHandle user,
+                boolean replacing
+        ) {
+            notifyChanged();
+        }
+    };
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "vs-app-index");
         t.setPriority(Thread.NORM_PRIORITY - 1);
@@ -44,6 +75,17 @@ final class AppRepository {
         this.context = context.getApplicationContext();
         launcherApps = this.context.getSystemService(LauncherApps.class);
         userManager = this.context.getSystemService(UserManager.class);
+    }
+
+    void setChangeCallback(Runnable callback) {
+        changeCallback = callback;
+        if (launcherApps == null || launcherCallbackRegistered) return;
+        launcherApps.registerCallback(launcherCallback, main);
+        launcherCallbackRegistered = true;
+    }
+
+    private void notifyChanged() {
+        if (changeCallback != null) changeCallback.run();
     }
 
     void load(Callback callback) {
@@ -259,6 +301,11 @@ final class AppRepository {
     }
 
     void close() {
+        if (launcherApps != null && launcherCallbackRegistered) {
+            launcherApps.unregisterCallback(launcherCallback);
+            launcherCallbackRegistered = false;
+        }
+        changeCallback = null;
         executor.shutdownNow();
     }
 }
