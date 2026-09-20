@@ -1018,7 +1018,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     @Override public void onBatteryTapped() {
         Intent primary = new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS);
         if (!launchExternalIntent(primary)) {
-            launchExternalIntent(new Intent(Settings.ACTION_BATTERY_SETTINGS));
+            launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
         }
     }
 
