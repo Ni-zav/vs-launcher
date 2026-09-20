@@ -6,8 +6,10 @@ package com.vslauncher;
  */
 final class LauncherUiConfig {
     final String homePosition;
+    final String homeAlignment;
     final String density;
     final String textSize;
+    final String appsTextSize;
     final boolean showTime;
     final boolean showDate;
     final boolean showWeather;
@@ -22,8 +24,10 @@ final class LauncherUiConfig {
 
     private LauncherUiConfig(
             String homePosition,
+            String homeAlignment,
             String density,
             String textSize,
+            String appsTextSize,
             boolean showTime,
             boolean showDate,
             boolean showWeather,
@@ -37,8 +41,10 @@ final class LauncherUiConfig {
             boolean haptics
     ) {
         this.homePosition = homePosition;
+        this.homeAlignment = homeAlignment;
         this.density = density;
         this.textSize = textSize;
+        this.appsTextSize = appsTextSize;
         this.showTime = showTime;
         this.showDate = showDate;
         this.showWeather = showWeather;
@@ -55,7 +61,9 @@ final class LauncherUiConfig {
     static LauncherUiConfig defaults() {
         return new LauncherUiConfig(
                 LauncherPreferences.POSITION_TOP,
+                LauncherPreferences.ALIGN_LEFT,
                 LauncherPreferences.DENSITY_NORMAL,
+                LauncherPreferences.TEXT_MEDIUM,
                 LauncherPreferences.TEXT_MEDIUM,
                 true, true, true, true,
                 LauncherPreferences.STATUS_TIME_FIRST,
@@ -71,8 +79,10 @@ final class LauncherUiConfig {
     static LauncherUiConfig from(LauncherPreferences prefs) {
         return new LauncherUiConfig(
                 prefs.homePosition(),
+                prefs.homeAlignment(),
                 prefs.density(),
                 prefs.textSize(),
+                prefs.appsTextSize(),
                 prefs.showTime(),
                 prefs.showDate(),
                 prefs.showWeather(),
@@ -88,14 +98,21 @@ final class LauncherUiConfig {
     }
 
     float rowHeightDp() {
+        if (LauncherPreferences.DENSITY_DENSE.equals(density)) return 38f;
         if (LauncherPreferences.DENSITY_COMPACT.equals(density)) return 44f;
         if (LauncherPreferences.DENSITY_SPACIOUS.equals(density)) return 64f;
         return 54f;
     }
 
-    float appTextSp() {
+    float homeTextSp() {
         if (LauncherPreferences.TEXT_SMALL.equals(textSize)) return 16f;
         if (LauncherPreferences.TEXT_LARGE.equals(textSize)) return 22f;
+        return 19f;
+    }
+
+    float appTextSp() {
+        if (LauncherPreferences.TEXT_SMALL.equals(appsTextSize)) return 16f;
+        if (LauncherPreferences.TEXT_LARGE.equals(appsTextSize)) return 22f;
         return 19f;
     }
 
