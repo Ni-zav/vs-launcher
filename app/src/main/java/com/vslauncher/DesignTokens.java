@@ -29,6 +29,7 @@ final class DesignTokens {
 
     static final float PAGE_HORIZONTAL_DP = 24f;
     static final float ROW_HEIGHT_DP = 54f;
+    static final float PROFILE_HEADER_LEAD_DP = 16f;
     static final float CORNER_DP = 12f;
 
     static final float DATE_SP = 13f;

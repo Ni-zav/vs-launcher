@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Calm visual follow-up
+
+- Removed per-row Settings dividers; section labels and whitespace now carry grouping.
+- Added a 16dp visual lead before WORK/PRIVATE profile headers without adding another persistent row or container.
+- Kept empty-query search rows uniform; the first result is promoted only after a normalized query is actually present.
+- Added CI source guards for these rendering invariants.
+
 ## 0.7.0 — 2026-09-20
 
 ### Calm monochrome hierarchy

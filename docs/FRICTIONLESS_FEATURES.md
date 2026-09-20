@@ -155,6 +155,10 @@ This scale is semantic, not customizable. It exists to stop metadata, section la
 
 Pressed rows keep the black surface and brighten text rather than inverting the entire row. The focused search EditText is borderless. Low battery may temporarily promote its luminance but never changes hue.
 
+Settings rows are intentionally dividerless: section labels plus whitespace provide structure without making every row look equally important. WORK/PRIVATE headers get a small leading gap inside their existing row so profile namespaces separate from personal apps without adding a new permanent surface.
+
+Search emphasis is contextual. With an empty query, visible app rows stay at the same luminance. Once normalized input exists, only the deterministic first-ranked result may rise to primary luminance to communicate the Go/Enter target.
+
 ## Native Android app shortcuts
 
 VS Launcher uses Android `LauncherApps` shortcut APIs only when an app is long-pressed.

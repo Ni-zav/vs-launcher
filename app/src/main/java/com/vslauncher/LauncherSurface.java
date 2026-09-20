@@ -100,7 +100,6 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
-    private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
     private final Paint statusFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
     private final Paint batteryFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
@@ -196,6 +195,7 @@ final class LauncherSurface extends View {
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
     private float settingsSectionHeaderHeightPx;
+    private float profileHeaderLeadPx;
     private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
     private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
     private final String[] settingsValues = new String[SETTINGS_ROW_COUNT];
@@ -205,6 +205,7 @@ final class LauncherSurface extends View {
     private float settingsScroll;
     private int hiddenAppCount;
     private boolean searchActive;
+    private boolean searchHasQuery;
     private final int[] alphabetFirstIndex = new int[27];
     private final float[] alphabetWidths = new float[27];
     private final float[] alphabetActiveWidths = new float[27];
@@ -369,8 +370,9 @@ final class LauncherSurface extends View {
         invalidate();
     }
 
-    void setSearchResults(List<SearchResult> results) {
+    void setSearchResults(List<SearchResult> results, boolean hasQuery) {
         searchResults = results == null ? Collections.emptyList() : results;
+        searchHasQuery = hasQuery;
         searchMetaWidths = new float[searchResults.size()];
         for (int i = 0; i < searchResults.size(); i++) {
             String meta = searchResults.get(i).meta;
@@ -673,6 +675,7 @@ final class LauncherSurface extends View {
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
         settingsSectionHeaderHeightPx = dp(28f);
+        profileHeaderLeadPx = dp(DesignTokens.PROFILE_HEADER_LEAD_DP);
         recalculateSettingsGeometry();
 
         float defaultHomeStart = contentTopPx + dp(164f);
@@ -920,7 +923,7 @@ final class LauncherSurface extends View {
             boolean pressed = i == pressedAppIndex;
             Paint rowPaint = pressed
                     ? appPressedPaint
-                    : i == 0 ? appPrimaryPaint : appPaint;
+                    : searchHasQuery && i == 0 ? appPrimaryPaint : appPaint;
 
             canvas.drawText(result.label, x, rowTop + baselineOffset, rowPaint);
             if (!result.meta.isEmpty()) {
@@ -961,7 +964,7 @@ final class LauncherSurface extends View {
             Paint rowPaint;
             if (pressed) {
                 rowPaint = appPressedPaint;
-            } else if (searchActive && i == 0) {
+            } else if (searchActive && searchHasQuery && i == 0) {
                 rowPaint = appPrimaryPaint;
             } else {
                 rowPaint = appPaint;
@@ -1001,17 +1004,18 @@ final class LauncherSurface extends View {
                         pressed ? appPressedPaint : appPaint
                 );
             } else {
+                float profileBaseline = rowTop + baselineOffset + profileHeaderLeadPx;
                 canvas.drawText(
                         item.label,
                         x,
-                        rowTop + baselineOffset,
+                        profileBaseline,
                         pressed ? metaPressedPaint : labelPaint
                 );
                 if (!item.value.isEmpty()) {
                     canvas.drawText(
                             item.value,
                             right - browseValueWidths[i],
-                            rowTop + baselineOffset,
+                            profileBaseline,
                             pressed ? metaPressedPaint : metaPaint
                     );
                 }
@@ -1069,13 +1073,6 @@ final class LauncherSurface extends View {
             );
         }
 
-        canvas.drawRect(
-                x,
-                y + rowHeightPx - dividerThicknessPx,
-                right,
-                y + rowHeightPx,
-                dividerPaint
-        );
     }
 
     private String settingsLabel(int index) {

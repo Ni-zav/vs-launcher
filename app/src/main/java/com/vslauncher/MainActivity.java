@@ -335,7 +335,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
         searchResults = buildSearchResults(query, filteredApps);
         surface.setApps(apps, filteredApps);
-        surface.setSearchResults(searchResults);
+        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -595,7 +595,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
         searchResults = buildSearchResults(query, filteredApps);
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults);
+        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -629,7 +629,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 );
                 searchResults = buildSearchResults(query, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                surface.setSearchResults(searchResults);
+                surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
                 scheduleSingleResultLaunch(query, searchResults);
             }
 
@@ -690,7 +690,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             filteredApps = apps;
             searchResults = Collections.emptyList();
             surface.setFilteredApps(filteredApps);
-            surface.setSearchResults(searchResults);
+            surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
             return;
         }
 
@@ -705,7 +705,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         filteredApps = apps;
         searchResults = Collections.emptyList();
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults);
+        surface.setSearchResults(searchResults, !SearchNormalization.normalize(query).isEmpty());
     }
 
     private List<SearchResult> buildSearchResults(
