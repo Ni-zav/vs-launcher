@@ -400,10 +400,10 @@ After installing:
 6. Return Home and swipe up; the selected quick app should open directly.
 7. Swipe left to Apps and confirm search is immediately focused with a borderless field and the keyboard requested.
 8. Type until one app remains and confirm the stable singleton app launches even if a quiet SYSTEM row is also present; verify command-only rows never auto-launch.
-9. Re-enter Apps, start vertically scrolling, and confirm search/query/keyboard disappear, the list expands, and the #–Z rail appears.
+9. Re-enter Apps, start vertically scrolling, and confirm search/query/keyboard disappear, the list expands, and the `#–Z` rail appears with `#` first and centered glyphs.
 10. Tap APPS and confirm search returns; return to browse and pull down at the top to confirm the same search re-entry.
 11. Verify Back performs Search → Browse → Home.
-12. Scrub #–Z and confirm available/unavailable letters use different luminance while the active letter is transient.
+12. Hold/scrub `#–Z`; confirm unavailable touches snap to an actual available bucket, that bucket brightens in-place, matching apps stay prominent, unrelated apps dim, and release restores normal luminance.
 13. Search `wifi`, `volume`, and `settings`; verify quiet SYSTEM rows execute only after tap/Go.
 14. Search a safe phone number and domain; verify DIAL opens the dialer without placing a call and OPEN hands the URL to Android.
 15. Long-press an app with native shortcuts, pin one into Home, launch it from the text row, export/import config, and confirm the shortcut remains usable.
@@ -412,7 +412,7 @@ After installing:
 18. Tap `+ ADD APP`, rename/reorder Home rows, and confirm ordinary app-slot persistence.
 19. Tap time/date/battery/weather and verify semantic actions.
 20. If work/private profiles exist, verify their conditional containers, quiet/lock behavior, and Private Space search/Home privacy.
-21. Change position, density, text size, status modules/formats, animation speed, and haptics in Settings.
-22. Reboot once and confirm Home app/shortcut slots, aliases, hidden apps, visual preferences, Private Space visibility preference, and quick-launch app persist.
+21. Test Home Top/Center/Bottom, Left/Center/Right, Dense/Compact/Normal/Spacious, independent Home/Apps text sizes, Settings section spacing, status modules/formats, animation speed, and haptics.
+22. Reboot once and confirm Home app/shortcut slots, aliases, hidden apps, alignment/density/text preferences, Private Space visibility preference, and quick-launch app persist; import a pre-0.9 JSON once to confirm legacy shared text size and Left alignment defaults remain compatible.
 
 For repeatable physical-device performance validation, see `docs/BENCHMARK.md`. The benchmark tooling is isolated from the normal launcher APK.

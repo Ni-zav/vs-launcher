@@ -634,7 +634,11 @@ The committed report should contain facts, not generated-log dumps:
 - install result
 - whether install preserved existing data
 - HOME role/manual launcher selection result
-- 0.9 minimal-layout + search/browse/accessibility result
+- 0.9 Home alignment/density/independent-text result
+- `#–Z` centered rail + active-bucket luminance result
+- Settings rhythm + single/paired status layout result
+- pre-0.9 config compatibility result
+- search/browse/accessibility result
 - command/dial/URL action result
 - pinned Home shortcut + import persistence result
 - transient Undo result
