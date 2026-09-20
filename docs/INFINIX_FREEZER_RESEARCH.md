@@ -138,51 +138,65 @@ Primary source:
 
 - https://source.android.com/docs/core/perf/cached-apps-freezer
 
-### 6. AOSP has an instrumentation-related freezer flag, but do not use it yet
+### 6. Correction: `freeze_exempt_inst_pkg` is **not** a Macrobenchmark/instrumentation-package exemption
 
-Current AOSP `CachedAppOptimizer` defines:
+The name is easy to misread.
 
-```text
-activity_manager_native_boot / freeze_exempt_inst_pkg
-```
-
-and the current AOSP default is:
+Current AOSP source documents:
 
 ```text
-false
+freeze_exempt_inst_pkg
 ```
 
-The source listens for DeviceConfig changes and exposes the state through `CachedAppOptimizer` diagnostics.
+as freezer exemption for **INSTALL_PACKAGES**.
 
-Primary source:
+The relevant source comments state:
+
+```text
+Returns whether freezer exempts INSTALL_PACKAGES.
+```
+
+and the per-process freezer record describes this exemption as applying to:
+
+```text
+system apps with INSTALL_PACKAGES permission
+```
+
+Therefore:
+
+- `inst_pkg` here means **install-packages**, not instrumentation package.
+- enabling this flag would not provide a documented exemption for the ordinary
+  `com.vslauncher.macrobenchmark` instrumentation controller.
+- it is not a package-name selector.
+- the DeviceConfig key is still device-global configuration.
+- it should **not** be used as a VS Launcher Macrobenchmark workaround.
+
+Primary AOSP sources:
 
 - https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/am/CachedAppOptimizer.java
+- https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/am/ProcessCachedOptimizerRecord.java
 
-Important: the exact package/process semantics of this flag still need to be traced through its consumer before we call it a safe workaround.
+### 7. What this rules out
 
-For now:
+Do **not** add this command to the test workflow:
 
-- it is a **candidate under investigation**
-- do not assume it is a package-scoped setting merely because its name contains `inst_pkg`
-- the DeviceConfig key itself is global configuration
-- do not add it to an automated device-test script yet
-
-### 7. AOSP changed this instrumentation exemption default to false
-
-AOSP history includes a change titled:
-
-```text
-Disable freeze_exempt_inst_pkg by default
+```sh
+adb shell device_config put activity_manager_native_boot freeze_exempt_inst_pkg true
 ```
 
-This confirms that the flag is real and intentionally defaults off in modern AOSP.
+It would change a global ActivityManager freezer policy whose documented target
+is system apps with `INSTALL_PACKAGES`, while providing no documented
+package-specific protection for the Macrobenchmark controller.
 
-That does not by itself explain why it was disabled or prove it is suitable for Macrobenchmark on Android 16.
+This false lead is useful because it narrows the remaining investigation:
 
-Historical source reference:
-
-- AOSP/frameworks/base history for `freeze_exempt_inst_pkg`
-- current default is directly visible in `CachedAppOptimizer.DEFAULT_FREEZER_EXEMPT_INST_PKG = false`
+1. verify whether the controller is still registered as active instrumentation
+   at the exact moment XOS freezes it
+2. verify its ActivityManager proc state / OOM adjustment at that moment
+3. determine whether XOS is freezing it outside the normal AOSP
+   CachedAppOptimizer eligibility path
+4. investigate Android 16 / AndroidX Benchmark regressions before resorting to
+   the device-wide `use_freezer=false` diagnostic
 
 ---
 
@@ -260,7 +274,6 @@ Confidence:
 
 Next research batch:
 
-1. trace exactly where `freezerExemptInstPkg()` is consumed
-2. determine whether it exempts the instrumentation package, the instrumented target package, or another class of package
-3. verify runtime/reboot behavior
-4. evaluate measurement validity if enabled
+1. check current AndroidX Benchmark / Macrobenchmark Android 16 release notes and known issues
+2. check AOSP / Android Issue Tracker for instrumentation-controller freezing on Android 16
+3. keep the existing device-wide `use_freezer=false` option only as a diagnostic candidate until measurement impact is assessed
