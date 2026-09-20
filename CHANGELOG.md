@@ -42,6 +42,7 @@
 
 - Existing 0.7 preferences/JSON configuration remain compatible; no migration is required.
 - No gesture was reassigned and no Home pixel was added for the new utilities.
+- Passive SYSTEM rows preserve 0.7 singleton app auto-launch; explicit structured utility/GUIDE rows suppress it to protect deliberate typed intent.
 - Minimum SDK, package name, Private Space policy, Home-slot semantics, and Android 15+ startup order are unchanged.
 - Bumped app version to `0.8.0` / versionCode `8`.
 - Updated weather User-Agent to `VS-Launcher/0.8`.

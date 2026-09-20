@@ -41,7 +41,7 @@ Home
 → auto-launch
 ```
 
-A stable single **app** result auto-launches after a short debounce. Quiet non-app command rows do not block that singleton-app behavior and never auto-launch themselves. Keyboard Go/Enter immediately executes the first ranked row.
+A stable single **app** result auto-launches after a short debounce when any accompanying rows are passive SYSTEM commands. Explicit structured utility rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB) and GUIDE suppress singleton app auto-launch so deliberate typed intent is never stolen. Non-app rows themselves never auto-launch. Keyboard Go/Enter immediately executes the first ranked row.
 
 Browse mode can return to search without going Home:
 
@@ -147,6 +147,7 @@ Rules:
 - apps stay before non-app rows
 - commands require at least two normalized characters
 - command/direct-utility results never auto-fire
+- passive SYSTEM rows may coexist with lone-app auto-launch; explicit structured utility/GUIDE rows suppress it
 - the typed query is normalized exactly once per edit and the cached normalized value is reused
 - timer/alarm/calculator/URL/dial parsing stays local and I/O-free
 - web fallback delegates to Android/browser handling; VS performs no search request itself

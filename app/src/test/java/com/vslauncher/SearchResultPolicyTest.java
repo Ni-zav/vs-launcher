@@ -2,6 +2,7 @@ package com.vslauncher;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -26,12 +27,12 @@ public final class SearchResultPolicyTest {
         assertNotNull(timer);
         assertNotNull(alarm);
 
-        assertFalse(!SearchResult.timer(timer).blocksAppAutoLaunch());
-        assertFalse(!SearchResult.alarm(alarm).blocksAppAutoLaunch());
-        assertFalse(!SearchResult.calculation("391").blocksAppAutoLaunch());
-        assertFalse(!SearchResult.web("unknown query").blocksAppAutoLaunch());
-        assertFalse(!SearchResult.dial("+628123456789").blocksAppAutoLaunch());
-        assertFalse(!SearchResult.url("https://example.com").blocksAppAutoLaunch());
+        assertTrue(SearchResult.timer(timer).blocksAppAutoLaunch());
+        assertTrue(SearchResult.alarm(alarm).blocksAppAutoLaunch());
+        assertTrue(SearchResult.calculation("391").blocksAppAutoLaunch());
+        assertTrue(SearchResult.web("unknown query").blocksAppAutoLaunch());
+        assertTrue(SearchResult.dial("+628123456789").blocksAppAutoLaunch());
+        assertTrue(SearchResult.url("https://example.com").blocksAppAutoLaunch());
 
         SearchCommand wifi = SearchCommand.matchingNormalized("wifi").get(0);
         assertFalse(SearchResult.command(wifi).blocksAppAutoLaunch());
@@ -41,6 +42,6 @@ public final class SearchResultPolicyTest {
                 .findFirst()
                 .orElse(null);
         assertNotNull(help);
-        assertFalse(!SearchResult.command(help).blocksAppAutoLaunch());
+        assertTrue(SearchResult.command(help).blocksAppAutoLaunch());
     }
 }

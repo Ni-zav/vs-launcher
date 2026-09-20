@@ -159,7 +159,7 @@ Before merging launcher behavior/rendering changes:
 8. Verify the first vertical Apps browse gesture removes search/query/keyboard and reveals the A–Z rail.
 9. Verify A–Z + # scrubbing jumps to the nearest available initial and missing buckets stay visually quieter.
 10. Test accent/punctuation normalization plus prefix/alias/initials/substring/bounded-fuzzy ordering.
-11. Verify a lone app auto-launches even with command rows present; non-app results never auto-fire.
+11. Verify a lone app auto-launches beside passive SYSTEM rows, while explicit DIAL/OPEN/TIMER/ALARM/CALC/WEB/GUIDE intent suppresses app auto-launch; non-app results never auto-fire.
 12. Verify typed search follows the cached normalized-query path.
 13. Verify SYSTEM plus DIAL/OPEN actions execute only after deliberate tap/Go.
 14. Verify `timer 10m`, `timer 1h 30m`, and `alarm 07:30` produce deliberate TIMER/ALARM rows.
