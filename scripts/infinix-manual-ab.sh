@@ -149,6 +149,31 @@ stage_candidate() {
   echo "It is NOT committed."
 }
 
+build_reference_without_profile() {
+  local session="$1"
+  mkdir -p "$session"
+
+  if [[ -e "$TARGET_PROFILE" ]]; then
+    echo "Cannot build no-profile reference while $TARGET_PROFILE exists." >&2
+    return 4
+  fi
+
+  gradle --no-daemon :app:assembleBenchmark     | tee "$session/build-reference-no-profile.txt"
+
+  local apk
+  apk="$(find_benchmark_apk)"
+  if [[ -z "$apk" ]]; then
+    echo "Could not find reference benchmark APK." >&2
+    return 5
+  fi
+
+  printf '%s\n' "$apk" > "$session/reference-apk-path.txt"
+  printf '%s\n' "$(hash_file "$apk")" > "$session/reference-apk-sha256.txt"
+  stat -c '%s' "$apk" > "$session/reference-apk-size-bytes.txt" 2>/dev/null || wc -c < "$apk" > "$session/reference-apk-size-bytes.txt"
+
+  echo "No-profile reference APK size: $(cat "$session/reference-apk-size-bytes.txt") bytes"
+}
+
 build_candidate() {
   local session="$1"
   mkdir -p "$session"
@@ -323,7 +348,9 @@ compare_states() {
     echo
     echo "- Candidate profile SHA-256: $(awk -F= '/staged_sha256=/{print $2}' "$session/candidate.txt")"
     echo "- Benchmark APK SHA-256: $(cat "$session/apk-sha256.txt")"
-    echo "- APK size: $(cat "$session/apk-size-bytes.txt") bytes"
+    echo "- No-profile APK size: $(cat "$session/reference-apk-size-bytes.txt") bytes"
+    echo "- Candidate APK size: $(cat "$session/apk-size-bytes.txt") bytes"
+    echo "- APK size delta: $(( $(cat "$session/apk-size-bytes.txt") - $(cat "$session/reference-apk-size-bytes.txt") )) bytes"
     echo "- A CSV: $a"
     echo "- B CSV: $b"
     echo
@@ -378,6 +405,7 @@ prepare_session() {
   local session="$2"
   mkdir -p "$session"
   record_device_state "$session/device-session-start.txt"
+  build_reference_without_profile "$session"
   stage_candidate "$source" "$session"
   build_candidate "$session"
   install_candidate "$session"
