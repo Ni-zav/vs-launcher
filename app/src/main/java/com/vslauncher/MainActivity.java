@@ -440,6 +440,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         return eligible;
     }
 
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     private void registerPackageChanges() {
         if (packageReceiverRegistered) return;
 
