@@ -57,6 +57,7 @@ final class LauncherSurface extends View {
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
         void onAppsBrowseGestureStarted();
+        void onAppsSearchRequested();
         void onSettingAction(int action);
         void onClockTapped();
         void onDateTapped();
@@ -198,6 +199,8 @@ final class LauncherSurface extends View {
     private float alphabetStepPx;
     private float alphabetFirstBaselinePx;
     private float alphabetActiveBaselinePx;
+    private float appsSearchPullThresholdPx;
+    private boolean appsSearchPullTriggered;
     private float downX;
     private float downY;
     private float lastY;
@@ -574,6 +577,7 @@ final class LauncherSurface extends View {
         );
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
         alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
+        appsSearchPullThresholdPx = dp(34f);
 
         dividerThicknessPx = dp(1f);
         timeBaselinePx = contentTopPx + dp(58f);
@@ -1075,6 +1079,7 @@ final class LauncherSurface extends View {
                 dragOffsetX = 0f;
                 gestureMode = GESTURE_NONE;
                 longPressTriggered = false;
+                appsSearchPullTriggered = false;
 
                 if (page == PAGE_APPS
                         && !searchActive
@@ -1106,6 +1111,7 @@ final class LauncherSurface extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (appsSearchPullTriggered) return true;
                 if (alphabetScrubbing) {
                     updateAlphabetScrub(event.getY());
                     return true;
@@ -1135,6 +1141,14 @@ final class LauncherSurface extends View {
                     }
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
+                    if (!searchActive
+                            && appScroll <= 0f
+                            && totalDy >= appsSearchPullThresholdPx) {
+                        appsSearchPullTriggered = true;
+                        host.onAppsSearchRequested();
+                        return true;
+                    }
+
                     float dy = event.getY() - lastY;
                     appScroll = clamp(appScroll - dy, 0f, maxAppScroll());
                     lastY = event.getY();
@@ -1149,6 +1163,12 @@ final class LauncherSurface extends View {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (appsSearchPullTriggered) {
+                    appsSearchPullTriggered = false;
+                    recycleVelocityTracker();
+                    gestureMode = GESTURE_NONE;
+                    return true;
+                }
                 if (alphabetScrubbing) {
                     alphabetScrubbing = false;
                     alphabetActiveIndex = -1;
@@ -1339,6 +1359,15 @@ final class LauncherSurface extends View {
         }
 
         if (page == PAGE_APPS) {
+            if (!searchActive
+                    && x >= leftPx
+                    && x <= rightPx
+                    && y >= contentTopPx
+                    && y < appsViewportTopPx) {
+                host.onAppsSearchRequested();
+                return;
+            }
+
             int index = allAppsIndexAt(x, y);
             if (index < 0) return;
 
