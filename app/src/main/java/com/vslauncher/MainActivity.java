@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.ShortcutInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -631,23 +632,52 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onAllAppsLongPressed(AppEntry app) {
         if (app == null) return;
-        CharSequence[] actions = {"Add to Home", "Hide", "App info", "Uninstall"};
+        appRepository.loadShortcuts(app, shortcuts -> showAppActions(app, shortcuts));
+    }
+
+    private void showAppActions(AppEntry app, List<ShortcutInfo> shortcuts) {
+        ArrayList<String> actions = new ArrayList<>();
+        ArrayList<ShortcutInfo> shortcutActions = new ArrayList<>();
+
+        int shortcutCount = Math.min(4, shortcuts.size());
+        for (int i = 0; i < shortcutCount; i++) {
+            ShortcutInfo shortcut = shortcuts.get(i);
+            CharSequence label = shortcut.getShortLabel();
+            if (label == null || label.length() == 0) continue;
+            actions.add(label.toString());
+            shortcutActions.add(shortcut);
+        }
+
+        int shortcutActionCount = actions.size();
+        actions.add("Add to Home");
+        actions.add("Hide");
+        actions.add("App info");
+        if (app.isPersonal()) actions.add("Uninstall");
+
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle(app.label)
-                .setItems(actions, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
+                .setTitle(app.pickerLabel())
+                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
+                    if (which < shortcutActionCount) {
+                        if (!appRepository.startShortcut(app, shortcutActions.get(which))) {
+                            reloadApps();
+                        }
+                        return;
+                    }
+
+                    String action = actions.get(which);
+                    switch (action) {
+                        case "Add to Home":
                             showAddToHomeSlotPicker(app);
                             break;
-                        case 1:
+                        case "Hide":
                             launcherPreferences.setHidden(app.componentKey, true);
                             refreshVisibleApps();
                             resolveLauncherConfiguration();
                             break;
-                        case 2:
+                        case "App info":
                             openAppInfo(app);
                             break;
-                        case 3:
+                        case "Uninstall":
                             requestUninstall(app);
                             break;
                         default:
@@ -838,7 +868,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (allApps.isEmpty()) return;
 
         CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).pickerLabel();
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Home app " + (slot + 1))
@@ -899,7 +929,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Add " + app.label)
+                .setTitle("Add " + app.pickerLabel())
                 .setItems(slots, (dialog, which) -> {
                     launcherPreferences.setHomeSlot(
                             which,
@@ -912,14 +942,20 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void openAppInfo(AppEntry app) {
-        Intent intent = new Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:" + app.component.getPackageName())
-        );
-        startActivity(intent);
+        if (!appRepository.startAppDetails(app)) {
+            Intent fallback = new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + app.component.getPackageName())
+            );
+            launchExternalIntent(fallback);
+        }
     }
 
     private void requestUninstall(AppEntry app) {
+        if (app == null || !app.isPersonal()) {
+            openAppInfo(app);
+            return;
+        }
         Intent intent = new Intent(
                 Intent.ACTION_DELETE,
                 Uri.parse("package:" + app.component.getPackageName())
@@ -931,7 +967,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (allApps.isEmpty()) return;
 
         CharSequence[] labels = new CharSequence[allApps.size()];
-        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).label;
+        for (int i = 0; i < allApps.size(); i++) labels[i] = allApps.get(i).pickerLabel();
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
                 .setTitle("Swipe-up app")
@@ -951,17 +987,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void launchApp(AppEntry app) {
         if (app == null) return;
-
-        Intent intent = new Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LAUNCHER)
-                .setComponent(app.component)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-
-        try {
-            startActivity(intent);
-        } catch (ActivityNotFoundException | SecurityException error) {
-            reloadApps();
-        }
+        if (!appRepository.startApp(app)) reloadApps();
     }
 
     @Override public void onClockTapped() {
