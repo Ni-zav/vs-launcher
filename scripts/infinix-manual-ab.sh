@@ -10,6 +10,7 @@ cd "$ROOT_DIR"
 ITERATIONS="${ITERATIONS:-20}"
 STATE_SETTLE_SECONDS="${STATE_SETTLE_SECONDS:-2}"
 BETWEEN_SAMPLES_SECONDS="${BETWEEN_SAMPLES_SECONDS:-1}"
+ORDER="${ORDER:-AB}"
 TARGET_PROFILE="app/src/main/baseline-prof.txt"
 
 adb_cmd=(adb)
@@ -438,13 +439,27 @@ run_all() {
 
   mkdir -p "$session"
 
+  if [[ "$ORDER" != "AB" && "$ORDER" != "BA" ]]; then
+    echo "ORDER must be AB or BA; got '$ORDER'." >&2
+    return 36
+  fi
+
+  printf '%s\n' "$ORDER" > "$session/order.txt"
+
   prepare_session "$source" "$session" || status=$?
   if [[ $status -eq 0 ]]; then
     installed=1
-    measure_state A "$session" || status=$?
-  fi
-  if [[ $status -eq 0 ]]; then
-    measure_state B "$session" || status=$?
+    if [[ "$ORDER" == "AB" ]]; then
+      measure_state A "$session" || status=$?
+      if [[ $status -eq 0 ]]; then
+        measure_state B "$session" || status=$?
+      fi
+    else
+      measure_state B "$session" || status=$?
+      if [[ $status -eq 0 ]]; then
+        measure_state A "$session" || status=$?
+      fi
+    fi
   fi
   if [[ $status -eq 0 ]]; then
     compare_states "$session" || status=$?
@@ -466,7 +481,7 @@ run_all() {
   echo "Manual A/B session: $session"
   echo "Candidate remains uncommitted at: $TARGET_PROFILE"
   if [[ $status -eq 0 ]]; then
-    echo "A/B completed. Review $session/comparison.md before deciding whether to commit the profile."
+    echo "A/B completed in ORDER=$ORDER. Review $session/comparison.md before deciding whether to commit the profile."
   else
     echo "A/B stopped with status $status. Do not commit the candidate from this incomplete run." >&2
   fi
@@ -514,6 +529,7 @@ Environment:
   ITERATIONS=20
   STATE_SETTLE_SECONDS=2
   BETWEEN_SAMPLES_SECONDS=1
+  ORDER=AB                  use BA for a reversed-order replication
 
 Important:
   This produces manual same-device startup evidence, not Macrobenchmark output.
