@@ -73,6 +73,13 @@ The script discovers the actual output path instead of assuming an APK filename.
 
 ## 2. Capture a real candidate on the X6855
 
+Before capture, temporarily select the stock Infinix/XOS launcher as the default
+Home app. The scripts intentionally refuse to run while `com.vslauncher` is the
+HOME role holder, because Android may relaunch the default Home immediately
+after `force-stop`, invalidating cold-process capture/measurement state.
+
+Record the previous HOME choice and restore VS Launcher after all testing.
+
 Run:
 
 ```sh
@@ -350,8 +357,23 @@ Negative B-A is faster.
 
 Do not decide from one fastest run.
 
-If the median change is tiny relative to the distributions/stdev, or the upper
-percentiles move in the wrong direction, treat the result as inconclusive.
+The default arm order is `AB`. If the first session appears promising enough
+to consider a production commit, run a reversed-order replication after
+unstaging the first candidate:
+
+```sh
+bash scripts/infinix-manual-ab.sh unstage <FIRST_SESSION>
+
+ORDER=BA ITERATIONS=20 STATE_SETTLE_SECONDS=2 \
+  bash scripts/infinix-manual-ab.sh all \
+  device-test-results/manual-profile-.../baseline-prof.txt
+```
+
+This helps expose simple thermal/order drift.
+
+If the median change is tiny relative to the distributions/stdev, the direction
+does not repeat across AB/BA order, or the upper percentiles move in the wrong
+direction, treat the result as inconclusive.
 
 ---
 
@@ -395,6 +417,8 @@ A manually generated candidate can be considered for production only if:
 10. launcher smoke behavior remains correct
 11. the device report clearly labels the manual methodology
 12. the ProfileInstaller skip file is deleted after testing
+13. a production KEEP decision is supported by a reversed-order replication
+    when practical on the same device
 
 If the candidate is inconclusive or slower:
 
@@ -437,6 +461,9 @@ code `11`.
 
 The A/B `all` command attempts cleanup automatically even though it leaves the
 candidate file staged for review.
+
+Finally, restore VS Launcher as the default Home app and verify normal launcher
+behavior.
 
 ---
 
