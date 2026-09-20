@@ -47,9 +47,11 @@ hot_methods = [
     "drawHomeRows",
     "drawBattery",
     "drawApps",
+    "drawSearchRows",
     "drawAppRows",
     "drawBrowseRows",
     "drawAlphabetRail",
+    "drawTransientMessage",
     "drawSettings",
     "drawSettingsRow",
 ]
