@@ -187,6 +187,7 @@ final class LauncherSurface extends View {
     private float alphabetRailX;
     private float alphabetStepPx;
     private float alphabetFirstBaselinePx;
+    private float alphabetActiveBaselinePx;
     private float downX;
     private float downY;
     private float lastY;
@@ -355,6 +356,8 @@ final class LauncherSurface extends View {
     void setSearchActive(boolean active) {
         if (searchActive == active) return;
         searchActive = active;
+        recalculateGeometry();
+        appScroll = clamp(appScroll, 0f, maxAppScroll());
         if (page == PAGE_APPS) invalidate();
     }
 
@@ -509,12 +512,17 @@ final class LauncherSurface extends View {
         settingsViewportTopPx = contentTopPx + dp(42f);
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
-        appsViewportBottomPx = Math.max(appsViewportTopPx, getHeight() - bottomInset - dp(96f));
+        float appsBottomReserveDp = searchActive ? 96f : 20f;
+        appsViewportBottomPx = Math.max(
+                appsViewportTopPx,
+                getHeight() - bottomInset - dp(appsBottomReserveDp)
+        );
         alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
         alphabetRailX = Math.max(0f, getWidth() - dp(8f));
         alphabetStepPx = Math.max(dp(10f),
                 (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length);
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
+        alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
 
         dividerThicknessPx = dp(1f);
         timeBaselinePx = contentTopPx + dp(58f);
@@ -760,7 +768,7 @@ final class LauncherSurface extends View {
             canvas.drawText(
                     active,
                     rightPx - alphabetWidths[alphabetActiveIndex],
-                    appsViewportTopPx + dp(34f),
+                    alphabetActiveBaselinePx,
                     titlePaint
             );
         }
