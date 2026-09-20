@@ -72,6 +72,10 @@ search_rows = method_body(surface, "drawSearchRows")
 if "searchHasQuery && i == 0" not in search_rows:
     errors.append("Search row #1 may only be promoted after a non-empty normalized query")
 
+browse_rows = method_body(surface, "drawBrowseRows")
+if "profileHeaderLeadPx" not in browse_rows:
+    errors.append("WORK/PRIVATE headers must retain their quiet leading separation")
+
 for forbidden in ("SharedPreferences", "PackageManager", "LauncherApps", "launcherPreferences"):
     if forbidden in surface:
         errors.append(f"LauncherSurface must not depend on {forbidden}")
