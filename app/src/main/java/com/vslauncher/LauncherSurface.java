@@ -76,8 +76,8 @@ final class LauncherSurface extends View {
     }
 
     private static final String[] ALPHABET_LABELS = {
-            "A","B","C","D","E","F","G","H","I","J","K","L","M",
-            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"
+            "#","A","B","C","D","E","F","G","H","I","J","K","L","M",
+            "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
     };
 
     private static final int GESTURE_NONE = 0;
@@ -252,7 +252,6 @@ final class LauncherSurface extends View {
     private float alphabetRailX;
     private float alphabetStepPx;
     private float alphabetFirstBaselinePx;
-    private float alphabetActiveBaselinePx;
     private float appsSearchPullThresholdPx;
     private float transientBaselinePx;
     private float transientTapTopPx;
@@ -703,13 +702,12 @@ final class LauncherSurface extends View {
                 getHeight() - bottomInset - dp(appsBottomReserveDp)
         );
         alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
-        alphabetRailX = Math.max(0f, getWidth() - dp(8f));
+        alphabetRailX = Math.max(0f, getWidth() - dp(13f));
         alphabetStepPx = Math.max(
                 1f,
                 (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length
         );
         alphabetFirstBaselinePx = appsViewportTopPx + alphabetStepPx * 0.72f;
-        alphabetActiveBaselinePx = appsViewportTopPx + dp(34f);
         appsSearchPullThresholdPx = dp(34f);
         float transientReserveDp = searchActive ? 76f : 18f;
         transientBaselinePx = getHeight() - bottomInset - dp(transientReserveDp);
@@ -979,7 +977,7 @@ final class LauncherSurface extends View {
             float baseline = alphabetFirstBaselinePx + i * alphabetStepPx;
             canvas.drawText(
                     ALPHABET_LABELS[i],
-                    alphabetRailX - alphabetWidths[i],
+                    alphabetRailX - alphabetWidths[i] * 0.5f,
                     baseline,
                     alphabetFirstIndex[i] >= 0 ? alphabetPaint : alphabetUnavailablePaint
             );
@@ -987,10 +985,11 @@ final class LauncherSurface extends View {
 
         if (alphabetScrubbing && alphabetActiveIndex >= 0) {
             String active = ALPHABET_LABELS[alphabetActiveIndex];
+            float baseline = alphabetFirstBaselinePx + alphabetActiveIndex * alphabetStepPx;
             canvas.drawText(
                     active,
-                    rightPx - alphabetActiveWidths[alphabetActiveIndex],
-                    alphabetActiveBaselinePx,
+                    alphabetRailX - alphabetActiveWidths[alphabetActiveIndex] * 0.5f,
+                    baseline,
                     titlePaint
             );
         }
@@ -1093,12 +1092,18 @@ final class LauncherSurface extends View {
             boolean pressed = i == pressedAppIndex;
 
             if (item.isApp()) {
-                canvas.drawText(
-                        item.app.label,
-                        x,
-                        rowTop + baselineOffset,
-                        pressed ? appPressedPaint : appPaint
-                );
+                Paint rowPaint;
+                if (pressed) {
+                    rowPaint = appPressedPaint;
+                } else if (alphabetScrubbing && alphabetActiveIndex >= 0) {
+                    int bucket = LauncherLayout.alphabetBucket(item.app.normalizedLabel);
+                    rowPaint = bucket == alphabetActiveIndex
+                            ? appPrimaryPaint
+                            : appDisabledPaint;
+                } else {
+                    rowPaint = appPaint;
+                }
+                canvas.drawText(item.app.label, x, rowTop + baselineOffset, rowPaint);
             } else {
                 float profileBaseline = rowTop + baselineOffset + profileHeaderLeadPx;
                 canvas.drawText(
@@ -1493,28 +1498,13 @@ final class LauncherSurface extends View {
         int requested = (int) ((y - appsViewportTopPx) / alphabetStepPx);
         requested = Math.max(0, Math.min(ALPHABET_LABELS.length - 1, requested));
 
-        int actual = nearestAlphabetIndex(requested);
+        int actual = LauncherLayout.nearestAvailableBucket(alphabetFirstIndex, requested);
         alphabetActiveIndex = actual >= 0 ? actual : requested;
         if (actual >= 0) {
             int row = alphabetFirstIndex[actual];
             appScroll = clamp(row * rowHeightPx, 0f, maxAppScroll());
         }
         postInvalidateOnAnimation();
-    }
-
-    private int nearestAlphabetIndex(int requested) {
-        if (alphabetFirstIndex[requested] >= 0) return requested;
-        for (int distance = 1; distance < ALPHABET_LABELS.length; distance++) {
-            int forward = requested + distance;
-            if (forward < ALPHABET_LABELS.length && alphabetFirstIndex[forward] >= 0) {
-                return forward;
-            }
-            int backward = requested - distance;
-            if (backward >= 0 && alphabetFirstIndex[backward] >= 0) {
-                return backward;
-            }
-        }
-        return -1;
     }
 
     @Override public void computeScroll() {

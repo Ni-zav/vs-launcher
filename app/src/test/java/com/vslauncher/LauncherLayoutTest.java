@@ -6,12 +6,25 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class LauncherLayoutTest {
-    @Test public void alphabetBucketsIncludeFallbackHash() {
-        assertEquals(0, LauncherLayout.alphabetBucket("alpha"));
-        assertEquals(25, LauncherLayout.alphabetBucket("zeta"));
-        assertEquals(26, LauncherLayout.alphabetBucket("1password"));
-        assertEquals(26, LauncherLayout.alphabetBucket("µtorrent"));
-        assertEquals(26, LauncherLayout.alphabetBucket("数字"));
+    @Test public void alphabetBucketsStartWithFallbackHash() {
+        assertEquals(0, LauncherLayout.alphabetBucket("1password"));
+        assertEquals(0, LauncherLayout.alphabetBucket("µtorrent"));
+        assertEquals(0, LauncherLayout.alphabetBucket("数字"));
+        assertEquals(1, LauncherLayout.alphabetBucket("alpha"));
+        assertEquals(26, LauncherLayout.alphabetBucket("zeta"));
+    }
+
+    @Test public void alphabetScrubSnapsToActualAvailableBucket() {
+        int[] first = new int[27];
+        java.util.Arrays.fill(first, -1);
+        first[0] = 0;
+        first[2] = 4;
+        first[5] = 9;
+
+        assertEquals(0, LauncherLayout.nearestAvailableBucket(first, 0));
+        assertEquals(2, LauncherLayout.nearestAvailableBucket(first, 1));
+        assertEquals(5, LauncherLayout.nearestAvailableBucket(first, 4));
+        assertEquals(2, LauncherLayout.nearestAvailableBucket(first, 3));
     }
 
     @Test public void visibleRowsFitCommonPhoneHeights() {
