@@ -50,6 +50,7 @@ final class LauncherSurface extends View {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
         void onHomeSlotLongPressed(int index);
+        void onEmptyHomeSlotTapped(int index);
         void onAllAppsLongPressed(AppEntry app);
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
@@ -1229,7 +1230,11 @@ final class LauncherSurface extends View {
             int index = homeIndexAt(x, y);
             if (index >= 0 && index < homeApps.size()) {
                 AppEntry app = homeApps.get(index);
-                if (app != null) host.onOpenApp(app);
+                if (app != null) {
+                    host.onOpenApp(app);
+                } else if (isFirstVisibleEmptyHomeSlot(index)) {
+                    host.onEmptyHomeSlotTapped(index);
+                }
             }
             return;
         }
@@ -1345,6 +1350,14 @@ final class LauncherSurface extends View {
 
         float start = appsViewportTopPx - appScroll;
         return LauncherLayout.rowIndexAt(y, start, rowHeightPx, filteredApps.size());
+    }
+
+    private boolean isFirstVisibleEmptyHomeSlot(int candidate) {
+        for (int i = 0; i < visibleHomeRowsCache; i++) {
+            AppEntry app = i < homeApps.size() ? homeApps.get(i) : null;
+            if (app == null) return i == candidate;
+        }
+        return false;
     }
 
     private int homeIndexAt(float x, float y) {
