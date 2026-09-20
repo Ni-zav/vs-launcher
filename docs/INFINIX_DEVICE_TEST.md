@@ -206,7 +206,7 @@ bash scripts/build-debug-apk.sh
 Expected APK:
 
 ```text
-dist/VS-Launcher-0.4.0-debug.apk
+dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 Verify device:
@@ -223,7 +223,7 @@ adb shell getprop ro.build.fingerprint
 Install/update without deleting data:
 
 ```sh
-adb install -r dist/VS-Launcher-0.4.0-debug.apk
+adb install -r dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 Verify installed version:
@@ -286,7 +286,7 @@ Required response:
 ```sh
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
   --verbose --print-certs \
-  dist/VS-Launcher-0.4.0-debug.apk
+  dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 5. only uninstall after intentionally accepting the local-data loss:

@@ -40,6 +40,11 @@ final class LauncherSurface extends View {
     static final int ACTION_IMPORT_CONFIG = 17;
 
     private static final int SETTINGS_ROW_COUNT = 19;
+    private static final int SETTINGS_SECTION_COUNT = 5;
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 4, 13, 16, 17};
+    private static final String[] SETTINGS_SECTION_LABELS = {
+            "HOME", "STATUS", "GESTURES", "APPS", "DATA"
+    };
 
     interface Host {
         void onPageRequested(int page);
@@ -69,6 +74,10 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint appPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
+    private final Paint appInversePaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.BLACK, DesignTokens.BODY);
+    private final Paint metaInversePaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.BLACK, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint dividerPaint = fillPaint(DesignTokens.DIVIDER);
@@ -119,6 +128,8 @@ final class LauncherSurface extends View {
     private float batteryTextWidth;
     private String homeCountText = "5";
     private float homeCountWidth;
+    private String appCountText = "0";
+    private float appCountWidth;
 
     // Draw-time constants cached with geometry/configuration.
     private float dividerThicknessPx;
@@ -132,7 +143,6 @@ final class LauncherSurface extends View {
     private float weatherOuterRadiusPx;
     private float weatherInnerRadiusPx;
     private float weatherTextOffsetPx;
-    private float statusDividerYPx;
     private float batteryWidthPx;
     private float batteryHeightPx;
     private float batteryRadiusPx;
@@ -152,13 +162,16 @@ final class LauncherSurface extends View {
     private float gestureThresholdPx;
     private float weatherTapTopPx;
     private float weatherTapBottomPx;
-    private float settingsSectionGapPx;
+    private float settingsSectionHeaderHeightPx;
+    private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
+    private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
     private final String[] settingsValues = new String[SETTINGS_ROW_COUNT];
     private final float[] settingsValueWidths = new float[SETTINGS_ROW_COUNT];
 
     private float appScroll;
     private float settingsScroll;
     private int hiddenAppCount;
+    private boolean searchActive;
     private float downX;
     private float downY;
     private float lastY;
@@ -168,6 +181,7 @@ final class LauncherSurface extends View {
 
     private int pressedHomeIndex = -1;
     private int pressedAppIndex = -1;
+    private int pressedSettingsIndex = -1;
     private boolean longPressTriggered;
 
     private ValueAnimator pageAnimator;
@@ -257,6 +271,7 @@ final class LauncherSurface extends View {
     void setUiConfig(LauncherUiConfig config) {
         uiConfig = config == null ? LauncherUiConfig.defaults() : config;
         appPaint.setTextSize(sp(uiConfig.appTextSp()));
+        appInversePaint.setTextSize(sp(uiConfig.appTextSp()));
         recalculateGeometry();
         refreshSettingsValueCache();
         invalidate();
@@ -285,14 +300,27 @@ final class LauncherSurface extends View {
     void setApps(List<AppEntry> all, List<AppEntry> filtered) {
         apps = all == null ? Collections.emptyList() : all;
         filteredApps = filtered == null ? apps : filtered;
+        updateAppCountCache();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         invalidate();
     }
 
     void setFilteredApps(List<AppEntry> filtered) {
         filteredApps = filtered == null ? apps : filtered;
+        updateAppCountCache();
         appScroll = 0f;
         scroller.abortAnimation();
+        if (page == PAGE_APPS) invalidate();
+    }
+
+    private void updateAppCountCache() {
+        appCountText = Integer.toString(filteredApps.size());
+        appCountWidth = labelPaint.measureText(appCountText);
+    }
+
+    void setSearchActive(boolean active) {
+        if (searchActive == active) return;
+        searchActive = active;
         if (page == PAGE_APPS) invalidate();
     }
 
@@ -460,7 +488,6 @@ final class LauncherSurface extends View {
         weatherOuterRadiusPx = dp(4.5f);
         weatherInnerRadiusPx = dp(1.5f);
         weatherTextOffsetPx = dp(18f);
-        statusDividerYPx = contentTopPx + dp(153f);
         batteryWidthPx = dp(24f);
         batteryHeightPx = dp(10f);
         batteryRadiusPx = dp(3f);
@@ -480,9 +507,10 @@ final class LauncherSurface extends View {
         gestureThresholdPx = dp(64f);
         weatherTapTopPx = contentTopPx + dp(101f);
         weatherTapBottomPx = contentTopPx + dp(143f);
-        settingsSectionGapPx = dp(24f);
+        settingsSectionHeaderHeightPx = dp(28f);
+        recalculateSettingsGeometry();
 
-        float defaultHomeStart = contentTopPx + dp(174f);
+        float defaultHomeStart = contentTopPx + dp(164f);
         float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
         float available = Math.max(0f, homeEnd - defaultHomeStart);
         float requestedHeight = maxHomeApps * rowHeightPx;
@@ -497,9 +525,24 @@ final class LauncherSurface extends View {
             homeListStartPx = defaultHomeStart;
         }
 
-        float homeAvailable = homeEnd - homeListStartPx;
-        int fit = rowHeightPx <= 0f ? 0 : Math.max(0, (int) Math.floor(homeAvailable / rowHeightPx));
-        visibleHomeRowsCache = Math.min(maxHomeApps, fit);
+        visibleHomeRowsCache = LauncherLayout.visibleRows(
+                maxHomeApps,
+                rowHeightPx,
+                homeListStartPx,
+                homeEnd
+        );
+    }
+
+    private void recalculateSettingsGeometry() {
+        LauncherLayout.fillSectionedRows(
+                settingsRowTops,
+                settingsSectionBaselines,
+                settingsViewportTopPx,
+                rowHeightPx,
+                settingsSectionHeaderHeightPx,
+                sp(DesignTokens.LABEL_SP),
+                SETTINGS_SECTION_STARTS
+        );
     }
 
     private float contentTop() {
@@ -513,8 +556,6 @@ final class LauncherSurface extends View {
     private void drawHome(Canvas canvas) {
         float x = left();
         float right = rightPx;
-        float top = contentTop();
-
         if (LauncherPreferences.STATUS_DATE_FIRST.equals(uiConfig.statusLayout)) {
             if (uiConfig.showDate) canvas.drawText(dateText, x, dateTopBaselinePx, datePaint);
             if (uiConfig.showTime) canvas.drawText(timeText, x, timeDateFirstBaselinePx, timePaint);
@@ -553,14 +594,6 @@ final class LauncherSurface extends View {
             }
         }
 
-        canvas.drawRect(
-                x,
-                statusDividerYPx,
-                right,
-                statusDividerYPx + dividerThicknessPx,
-                dividerPaint
-        );
-
         drawHomeRows(canvas, homeListStartPx, visibleHomeRowsCache);
     }
 
@@ -571,25 +604,27 @@ final class LauncherSurface extends View {
         float right = getWidth() - x;
         float rowHeight = rowHeightPx;
         float baselineOffset = rowHeight * 0.62f;
+        boolean emptyHintDrawn = false;
 
         for (int index = 0; index < count; index++) {
             float rowTop = startY + index * rowHeight;
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
+            boolean pressed = index == pressedHomeIndex;
+
+            if (pressed) {
+                canvas.drawRect(x, rowTop, right, rowTop + rowHeight, primaryFillPaint);
+            }
+
+            Paint rowPaint = pressed ? appInversePaint : appPaint;
+            Paint hintPaint = pressed ? metaInversePaint : metaPaint;
 
             if (app != null) {
                 String label = index < homeLabels.size() ? homeLabels.get(index) : app.label;
-                canvas.drawText(label, x, rowTop + baselineOffset, appPaint);
-            } else {
-                canvas.drawText("Hold to choose app", x, rowTop + baselineOffset, metaPaint);
+                canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
+            } else if (!emptyHintDrawn) {
+                canvas.drawText("+ ADD APP", x, rowTop + baselineOffset, hintPaint);
+                emptyHintDrawn = true;
             }
-
-            canvas.drawRect(
-                    x,
-                    rowTop + rowHeight - dividerThicknessPx,
-                    right,
-                    rowTop + rowHeight,
-                    dividerPaint
-            );
         }
     }
 
@@ -646,8 +681,8 @@ final class LauncherSurface extends View {
 
     private void drawApps(Canvas canvas) {
         float x = left();
-        float top = contentTop();
-        canvas.drawText("ALL APPS", x, allAppsTitleBaselinePx, labelPaint);
+        canvas.drawText(searchActive ? "SEARCH" : "APPS", x, allAppsTitleBaselinePx, labelPaint);
+        canvas.drawText(appCountText, rightPx - appCountWidth, allAppsTitleBaselinePx, labelPaint);
 
         float listStart = appsViewportTopPx;
         float listBottom = appsViewportBottomPx;
@@ -678,23 +713,26 @@ final class LauncherSurface extends View {
             float clipBottom
     ) {
         float row = rowHeightPx;
-        int first = Math.max(0, (int) Math.floor((clipTop - startY) / row));
-        int last = Math.min(count, (int) Math.ceil((clipBottom - startY) / row) + 1);
+        int first = LauncherLayout.firstVisibleIndex(clipTop, startY, row, count);
+        int last = LauncherLayout.lastVisibleExclusive(clipBottom, startY, row, count);
         if (last <= first) return;
 
         int save = canvas.save();
         canvas.clipRect(x, clipTop, getWidth() - x, clipBottom);
 
         float baselineOffset = rowHeightPx * 0.62f;
+        float right = getWidth() - x;
         for (int i = first; i < last; i++) {
             float rowTop = startY + i * row;
-            canvas.drawText(source.get(i).label, x, rowTop + baselineOffset, appPaint);
-            canvas.drawRect(
+            boolean pressed = i == pressedAppIndex;
+            if (pressed) {
+                canvas.drawRect(x, rowTop, right, rowTop + row, primaryFillPaint);
+            }
+            canvas.drawText(
+                    source.get(i).label,
                     x,
-                    rowTop + row - dividerThicknessPx,
-                    getWidth() - x,
-                    rowTop + row,
-                    dividerPaint
+                    rowTop + baselineOffset,
+                    pressed ? appInversePaint : appPaint
             );
         }
         canvas.restoreToCount(save);
@@ -703,17 +741,23 @@ final class LauncherSurface extends View {
     private void drawSettings(Canvas canvas) {
         float x = leftPx;
         float right = rightPx;
-        float top = contentTopPx;
 
         canvas.drawText("SETTINGS", x, settingsTitleBaselinePx, labelPaint);
 
         int save = canvas.save();
         canvas.clipRect(x, settingsViewportTopPx, right, settingsViewportBottomPx);
 
-        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            float y = settingsRowTop(index) - settingsScroll;
-            if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
+        for (int section = 0; section < SETTINGS_SECTION_COUNT; section++) {
+            float baseline = settingsSectionBaselines[section] - settingsScroll;
+            if (baseline >= settingsViewportTopPx - settingsSectionHeaderHeightPx
+                    && baseline <= settingsViewportBottomPx) {
+                canvas.drawText(SETTINGS_SECTION_LABELS[section], x, baseline, labelPaint);
+            }
+        }
 
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float y = settingsRowTops[index] - settingsScroll;
+            if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
             drawSettingsRow(canvas, index, y, x, right);
         }
 
@@ -730,19 +774,31 @@ final class LauncherSurface extends View {
         float baseline = y + rowHeightPx * 0.58f;
         String label = settingsLabel(index);
         String value = settingsValues[index];
+        boolean pressed = index == pressedSettingsIndex;
 
-        canvas.drawText(label, x, baseline, appPaint);
-        if (value != null && !value.isEmpty()) {
-            canvas.drawText(value, right - settingsValueWidths[index], baseline, metaPaint);
+        if (pressed) {
+            canvas.drawRect(x, y, right, y + rowHeightPx, primaryFillPaint);
         }
 
-        canvas.drawRect(
-                x,
-                y + rowHeightPx - dividerThicknessPx,
-                right,
-                y + rowHeightPx,
-                dividerPaint
-        );
+        canvas.drawText(label, x, baseline, pressed ? appInversePaint : appPaint);
+        if (value != null && !value.isEmpty()) {
+            canvas.drawText(
+                    value,
+                    right - settingsValueWidths[index],
+                    baseline,
+                    pressed ? metaInversePaint : metaPaint
+            );
+        }
+
+        if (!pressed) {
+            canvas.drawRect(
+                    x,
+                    y + rowHeightPx - dividerThicknessPx,
+                    right,
+                    y + rowHeightPx,
+                    dividerPaint
+            );
+        }
     }
 
     private String settingsLabel(int index) {
@@ -811,12 +867,7 @@ final class LauncherSurface extends View {
     }
 
     private float settingsRowTop(int index) {
-        float y = settingsViewportTopPx;
-        for (int i = 0; i < index; i++) {
-            y += rowHeightPx;
-            if (i == 3 || i == 12 || i == 15) y += settingsSectionGapPx;
-        }
-        return y;
+        return settingsRowTops[index];
     }
 
     private static String onOff(boolean value) {
@@ -858,8 +909,14 @@ final class LauncherSurface extends View {
                 pressedAppIndex = page == PAGE_APPS
                         ? allAppsIndexAt(downX, downY)
                         : -1;
+                pressedSettingsIndex = page == PAGE_SETTINGS
+                        ? settingsIndexAt(downX, downY)
+                        : -1;
                 if (pressedHomeIndex >= 0 || pressedAppIndex >= 0) {
                     postDelayed(longPressRunnable, longPressTimeout);
+                }
+                if (pressedHomeIndex >= 0 || pressedAppIndex >= 0 || pressedSettingsIndex >= 0) {
+                    invalidate();
                 }
                 return true;
 
@@ -928,6 +985,7 @@ final class LauncherSurface extends View {
                 gestureMode = GESTURE_NONE;
                 pressedHomeIndex = -1;
                 pressedAppIndex = -1;
+                pressedSettingsIndex = -1;
                 return true;
 
             default:
@@ -1066,14 +1124,8 @@ final class LauncherSurface extends View {
             return;
         }
 
-        float contentY = y + settingsScroll;
-        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            float rowTop = settingsRowTop(index);
-            if (contentY >= rowTop && contentY < rowTop + rowHeightPx) {
-                handleSettingsRow(index);
-                return;
-            }
-        }
+        int settingsIndex = settingsIndexAt(x, y);
+        if (settingsIndex >= 0) handleSettingsRow(settingsIndex);
     }
 
     private void handleSettingsRow(int index) {
@@ -1106,13 +1158,24 @@ final class LauncherSurface extends View {
         }
     }
 
+    private int settingsIndexAt(float x, float y) {
+        if (x < leftPx || x > rightPx) return -1;
+        if (y < settingsViewportTopPx || y >= settingsViewportBottomPx) return -1;
+
+        float contentY = y + settingsScroll;
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            float rowTop = settingsRowTops[index];
+            if (contentY >= rowTop && contentY < rowTop + rowHeightPx) return index;
+        }
+        return -1;
+    }
+
     private int allAppsIndexAt(float x, float y) {
         if (x < leftPx || x > rightPx) return -1;
         if (y < appsViewportTopPx || y >= appsViewportBottomPx || rowHeightPx <= 0f) return -1;
 
         float start = appsViewportTopPx - appScroll;
-        int index = (int) ((y - start) / rowHeightPx);
-        return index >= 0 && index < filteredApps.size() ? index : -1;
+        return LauncherLayout.rowIndexAt(y, start, rowHeightPx, filteredApps.size());
     }
 
     private int homeIndexAt(float x, float y) {
@@ -1123,8 +1186,7 @@ final class LauncherSurface extends View {
         if (x < leftPx || x > rightPx) return -1;
         if (y < start || y >= start + visible * row) return -1;
 
-        int index = (int) ((y - start) / row);
-        return index >= 0 && index < visible ? index : -1;
+        return LauncherLayout.rowIndexAt(y, start, row, visible);
     }
 
     private float homeListStart() {
@@ -1145,20 +1207,24 @@ final class LauncherSurface extends View {
 
     private float maxAppScroll() {
         float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
-        float content = filteredApps.size() * rowHeightPx;
-        return Math.max(0f, content - viewport);
+        return LauncherLayout.maxScroll(filteredApps.size(), rowHeightPx, viewport);
     }
 
     private float maxSettingsScroll() {
-        float contentBottom = settingsRowTop(SETTINGS_ROW_COUNT - 1) + rowHeightPx;
+        float contentBottom = settingsRowTops[SETTINGS_ROW_COUNT - 1] + rowHeightPx;
         float viewport = Math.max(0f, settingsViewportBottomPx - settingsViewportTopPx);
         return Math.max(0f, contentBottom - settingsViewportTopPx - viewport);
     }
 
     private void cancelPendingLongPress() {
+        boolean hadPressed = pressedHomeIndex >= 0
+                || pressedAppIndex >= 0
+                || pressedSettingsIndex >= 0;
         removeCallbacks(longPressRunnable);
         pressedHomeIndex = -1;
         pressedAppIndex = -1;
+        pressedSettingsIndex = -1;
+        if (hadPressed) invalidate();
     }
 
     private void recycleVelocityTracker() {

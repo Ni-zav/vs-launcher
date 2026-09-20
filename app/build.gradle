@@ -10,8 +10,8 @@ android {
         applicationId 'com.vslauncher'
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName '0.4.0'
+        versionCode 5
+        versionName '0.5.0'
     }
 
     compileOptions {
@@ -49,6 +49,7 @@ android {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     benchmarkImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
     baselineProfileImplementation 'androidx.profileinstaller:profileinstaller:1.4.1'
 }
