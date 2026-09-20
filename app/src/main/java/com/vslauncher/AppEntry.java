@@ -12,6 +12,7 @@ final class AppEntry {
 
     final String label;
     final String normalizedLabel;
+    final String searchInitials;
     final ComponentName component;
     final UserHandle user;
     final long userSerial;
@@ -27,6 +28,7 @@ final class AppEntry {
     ) {
         this.label = label;
         this.normalizedLabel = label.toLowerCase(java.util.Locale.ROOT);
+        this.searchInitials = SearchRanking.initials(label);
         this.component = component;
         this.user = user;
         this.userSerial = userSerial;
