@@ -400,6 +400,45 @@ No XOS freezer setting needs to be changed for this workflow.
 
 ---
 
+## 9. Delivery caveat for VS Launcher
+
+The current Gradle configuration includes ProfileInstaller only in:
+
+- `benchmarkImplementation`
+- `baselineProfileImplementation`
+
+The normal debug/release launcher APK therefore does **not** currently contain
+ProfileInstaller.
+
+Android supports two common delivery paths:
+
+- Play/DexMetadata installs, where the installer provides the profile alongside
+  the APK.
+- Jetpack ProfileInstaller, which copies the packaged profile into ART's
+  package profile area after a normal APK install.
+
+For VS Launcher's current GitHub/direct-sideload workflow, committing
+`baseline-prof.txt` proves/builds the profile but does not by itself guarantee
+that a plain sideload of the normal APK receives profile-guided compilation.
+
+Therefore keep two decisions separate:
+
+1. **Does the candidate improve VS Launcher?** — answered by this manual A/B.
+2. **How should direct-sideload users receive it?** — a follow-up delivery
+   decision after benefit is measured.
+
+Do not silently add ProfileInstaller to normal production variants before the
+candidate is proven useful. If the candidate is accepted, evaluate either:
+
+- a small explicit production ProfileInstaller dependency, with APK-size/runtime
+  smoke measurement, or
+- a distribution path that supplies matching DexMetadata.
+
+The manual A/B harness intentionally uses the benchmark variant's
+ProfileInstaller so it can force-install the candidate in a controlled test.
+
+---
+
 ## 9. Production profile decision
 
 A manually generated candidate can be considered for production only if:
@@ -419,6 +458,8 @@ A manually generated candidate can be considered for production only if:
 12. the ProfileInstaller skip file is deleted after testing
 13. a production KEEP decision is supported by a reversed-order replication
     when practical on the same device
+14. the report states whether the intended distribution path actually delivers
+    the profile to ART
 
 If the candidate is inconclusive or slower:
 
