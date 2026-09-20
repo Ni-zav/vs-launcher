@@ -72,6 +72,25 @@ If multiple Android devices are connected, set:
 export ADB_SERIAL=<serial>
 ```
 
+Before a performance run, record the existing HOME role holder. If VS Launcher
+is the default HOME, temporarily select the stock launcher: force-stopping the
+default HOME can make Android restart it before the intended cold-start sample.
+Restore the original HOME selection after measurements.
+
+On vendor firmware, a test can stall even while instrumentation remains active.
+Inspect the harness PID and its cgroup state before declaring a timeout:
+
+```sh
+adb shell pidof com.vslauncher.macrobenchmark
+adb shell cat /proc/<harness-pid>/cgroup
+```
+
+Use the returned cgroup path to inspect `cgroup.events` and its parent
+`cgroup.freeze`. A frozen UID can also freeze the test's timeout thread.
+Retain this evidence, stop the stalled harness, and resolve the vendor's
+background restriction before retrying. Do not treat an interrupted or frozen
+run as a performance sample, or change phone-wide power settings silently.
+
 ---
 
 ## 3. Preferred Codex/local smoke test
