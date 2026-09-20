@@ -104,6 +104,16 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
     private final Paint labelPaint =
             textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint labelPressedPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.FOCUS, DesignTokens.LABEL);
+    private final Paint homePaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_APP, DesignTokens.BODY);
+    private final Paint homePressedPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
+    private final Paint homeHintPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
+    private final Paint homeHintPressedPaint =
+            textPaint(DesignTokens.LABEL_SP, DesignTokens.FOCUS, DesignTokens.LABEL);
     private final Paint alphabetPaint =
             textPaint(9f, DesignTokens.TEXT_TERTIARY, DesignTokens.LABEL);
     private final Paint alphabetUnavailablePaint =
@@ -114,8 +124,10 @@ final class LauncherSurface extends View {
             textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint appPressedPaint =
             textPaint(DesignTokens.APP_SP, DesignTokens.FOCUS, DesignTokens.BODY);
+    private final Paint appDisabledPaint =
+            textPaint(DesignTokens.APP_SP, DesignTokens.TEXT_DISABLED, DesignTokens.BODY);
     private final Paint metaPressedPaint =
-            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
+            textPaint(DesignTokens.META_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint titlePaint =
             textPaint(DesignTokens.TITLE_SP, DesignTokens.TEXT_PRIMARY, DesignTokens.BODY);
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
@@ -172,6 +184,8 @@ final class LauncherSurface extends View {
     private float leftPx;
     private float rightPx;
     private float rowHeightPx;
+    private float homeRowHeightPx;
+    private float homeTextXPx;
     private float homeListStartPx;
     private float settingsMaxRowTopPx;
     private float settingsQuickRowTopPx;
@@ -353,9 +367,28 @@ final class LauncherSurface extends View {
 
     void setUiConfig(LauncherUiConfig config) {
         uiConfig = config == null ? LauncherUiConfig.defaults() : config;
-        appPaint.setTextSize(sp(uiConfig.appTextSp()));
-        appPrimaryPaint.setTextSize(sp(uiConfig.appTextSp()));
-        appPressedPaint.setTextSize(sp(uiConfig.appTextSp()));
+
+        float homeTextPx = sp(uiConfig.homeTextSp());
+        homePaint.setTextSize(homeTextPx);
+        homePressedPaint.setTextSize(homeTextPx);
+
+        float appTextPx = sp(uiConfig.appTextSp());
+        appPaint.setTextSize(appTextPx);
+        appPrimaryPaint.setTextSize(appTextPx);
+        appPressedPaint.setTextSize(appTextPx);
+        appDisabledPaint.setTextSize(appTextPx);
+
+        Paint.Align homeAlign = Paint.Align.LEFT;
+        if (LauncherPreferences.ALIGN_CENTER.equals(uiConfig.homeAlignment)) {
+            homeAlign = Paint.Align.CENTER;
+        } else if (LauncherPreferences.ALIGN_RIGHT.equals(uiConfig.homeAlignment)) {
+            homeAlign = Paint.Align.RIGHT;
+        }
+        homePaint.setTextAlign(homeAlign);
+        homePressedPaint.setTextAlign(homeAlign);
+        homeHintPaint.setTextAlign(homeAlign);
+        homeHintPressedPaint.setTextAlign(homeAlign);
+
         recalculateGeometry();
         refreshSettingsValueCache();
         invalidate();
@@ -650,6 +683,14 @@ final class LauncherSurface extends View {
         leftPx = dp(DesignTokens.PAGE_HORIZONTAL_DP);
         rightPx = Math.max(leftPx, getWidth() - leftPx);
         rowHeightPx = dp(uiConfig.rowHeightDp());
+        homeRowHeightPx = Math.max(rowHeightPx, sp(uiConfig.homeTextSp()) * 1.8f);
+        if (LauncherPreferences.ALIGN_CENTER.equals(uiConfig.homeAlignment)) {
+            homeTextXPx = getWidth() * 0.5f;
+        } else if (LauncherPreferences.ALIGN_RIGHT.equals(uiConfig.homeAlignment)) {
+            homeTextXPx = rightPx;
+        } else {
+            homeTextXPx = leftPx;
+        }
         contentTopPx = topInset + dp(28f);
         settingsMaxRowTopPx = contentTopPx + dp(72f);
         settingsQuickRowTopPx = contentTopPx + dp(198f);
@@ -713,7 +754,7 @@ final class LauncherSurface extends View {
         float defaultHomeStart = contentTopPx + dp(164f);
         float homeEnd = Math.max(defaultHomeStart, getHeight() - bottomInset - dp(20f));
         float available = Math.max(0f, homeEnd - defaultHomeStart);
-        float requestedHeight = maxHomeApps * rowHeightPx;
+        float requestedHeight = maxHomeApps * homeRowHeightPx;
 
         if (requestedHeight < available
                 && LauncherPreferences.POSITION_CENTER.equals(uiConfig.homePosition)) {
@@ -727,7 +768,7 @@ final class LauncherSurface extends View {
 
         visibleHomeRowsCache = LauncherLayout.visibleRows(
                 maxHomeApps,
-                rowHeightPx,
+                homeRowHeightPx,
                 homeListStartPx,
                 homeEnd
         );
@@ -782,15 +823,40 @@ final class LauncherSurface extends View {
         if (uiConfig.showBattery) {
             boolean icon = !LauncherPreferences.BATTERY_PERCENT.equals(uiConfig.batteryMode);
             boolean percent = !LauncherPreferences.BATTERY_ICON.equals(uiConfig.batteryMode);
+            boolean batterySharesStatusLine = uiConfig.showWeather;
 
-            if (icon && percent) {
-                float batteryTextX = right - batteryTextWidth;
-                drawBattery(canvas, batteryTextX - batteryTextGapPx, statusBaseline - batteryTopOffsetPx);
-                canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
-            } else if (icon) {
-                drawBattery(canvas, right - batteryOnlyRightInsetPx, statusBaseline - batteryTopOffsetPx);
+            if (batterySharesStatusLine) {
+                if (icon && percent) {
+                    float batteryTextX = right - batteryTextWidth;
+                    drawBattery(
+                            canvas,
+                            batteryTextX - batteryTextGapPx,
+                            statusBaseline - batteryTopOffsetPx
+                    );
+                    canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
+                } else if (icon) {
+                    drawBattery(
+                            canvas,
+                            right - batteryOnlyRightInsetPx,
+                            statusBaseline - batteryTopOffsetPx
+                    );
+                } else {
+                    canvas.drawText(
+                            batteryText,
+                            right - batteryTextWidth,
+                            statusBaseline,
+                            batteryTextPaint
+                    );
+                }
             } else {
-                canvas.drawText(batteryText, right - batteryTextWidth, statusBaseline, batteryTextPaint);
+                float batteryX = x + chargingXOffsetPx;
+                if (icon) {
+                    drawBattery(canvas, batteryX, statusBaseline - batteryTopOffsetPx);
+                }
+                if (percent) {
+                    float batteryTextX = icon ? batteryX + batteryTextGapPx : x;
+                    canvas.drawText(batteryText, batteryTextX, statusBaseline, batteryTextPaint);
+                }
             }
         }
 
@@ -800,9 +866,7 @@ final class LauncherSurface extends View {
     private void drawHomeRows(Canvas canvas, float startY, int count) {
         if (count <= 0) return;
 
-        float x = left();
-        float right = getWidth() - x;
-        float rowHeight = rowHeightPx;
+        float rowHeight = homeRowHeightPx;
         float baselineOffset = rowHeight * 0.62f;
         boolean emptyHintDrawn = false;
 
@@ -811,17 +875,17 @@ final class LauncherSurface extends View {
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
             boolean pressed = index == pressedHomeIndex;
 
-            Paint rowPaint = pressed ? appPressedPaint : appPaint;
-            Paint hintPaint = pressed ? metaPressedPaint : labelPaint;
+            Paint rowPaint = pressed ? homePressedPaint : homePaint;
+            Paint hintPaint = pressed ? homeHintPressedPaint : homeHintPaint;
 
             String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
             if (app != null) {
                 String label = configuredLabel.isEmpty() ? app.label : configuredLabel;
-                canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
+                canvas.drawText(label, homeTextXPx, rowTop + baselineOffset, rowPaint);
             } else if (!configuredLabel.isEmpty()) {
-                canvas.drawText(configuredLabel, x, rowTop + baselineOffset, hintPaint);
+                canvas.drawText(configuredLabel, homeTextXPx, rowTop + baselineOffset, hintPaint);
             } else if (!emptyHintDrawn) {
-                canvas.drawText("+ ADD APP", x, rowTop + baselineOffset, hintPaint);
+                canvas.drawText("+ ADD APP", homeTextXPx, rowTop + baselineOffset, hintPaint);
                 emptyHintDrawn = true;
             }
         }
@@ -1041,7 +1105,7 @@ final class LauncherSurface extends View {
                         item.label,
                         x,
                         profileBaseline,
-                        pressed ? metaPressedPaint : labelPaint
+                        pressed ? labelPressedPaint : labelPaint
                 );
                 if (!item.value.isEmpty()) {
                     canvas.drawText(
@@ -1543,7 +1607,12 @@ final class LauncherSurface extends View {
         float midpoint = getWidth() * 0.5f;
 
         if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-            if (uiConfig.showBattery && x >= midpoint) {
+            if (uiConfig.showWeather && uiConfig.showBattery) {
+                if (x >= midpoint) host.onBatteryTapped();
+                else host.onWeatherTapped();
+                return true;
+            }
+            if (uiConfig.showBattery) {
                 host.onBatteryTapped();
                 return true;
             }
@@ -1665,7 +1734,7 @@ final class LauncherSurface extends View {
 
     private int homeIndexAt(float x, float y) {
         float start = homeListStartPx;
-        float row = rowHeightPx;
+        float row = homeRowHeightPx;
         int visible = visibleHomeRowsCache;
 
         if (x < leftPx || x > rightPx) return -1;
@@ -1945,12 +2014,12 @@ final class LauncherSurface extends View {
             if (page != PAGE_HOME) return false;
             int index = virtualId - A11Y_HOME_BASE;
             if (homeAccessibilityLabel(index) == null) return false;
-            float top = homeListStartPx + index * rowHeightPx;
+            float top = homeListStartPx + index * homeRowHeightPx;
             out.set(
                     Math.round(leftPx),
                     Math.round(top),
                     Math.round(rightPx),
-                    Math.round(top + rowHeightPx)
+                    Math.round(top + homeRowHeightPx)
             );
             return true;
         }
@@ -2000,7 +2069,7 @@ final class LauncherSurface extends View {
             out.set(
                     Math.round(leftPx),
                     Math.round(weatherTapTopPx),
-                    Math.round(midpoint),
+                    Math.round(uiConfig.showBattery ? midpoint : rightPx),
                     Math.round(weatherTapBottomPx)
             );
             return true;
@@ -2008,7 +2077,7 @@ final class LauncherSurface extends View {
         if (virtualId == A11Y_BATTERY) {
             if (!uiConfig.showBattery) return false;
             out.set(
-                    Math.round(midpoint),
+                    Math.round(uiConfig.showWeather ? midpoint : leftPx),
                     Math.round(weatherTapTopPx),
                     Math.round(rightPx),
                     Math.round(weatherTapBottomPx)
