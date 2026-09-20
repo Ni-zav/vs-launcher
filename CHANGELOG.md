@@ -10,6 +10,14 @@
 - Timer/alarm launch failures now surface a quiet transient `unavailable` status instead of failing silently.
 - Bumped the test build to `0.9.1` / versionCode `10`.
 
+### Release evidence
+
+- First public release source: `v0.9.1` tag.
+- UI contract and Android lint passed.
+- Debug APK: `dist/VS-Launcher-0.9.1-debug.apk` (94,338 bytes).
+- SHA-256: `bad8d9b0877cfe4372f4b0e24b0fa9c8844b749c6729138710e70888d5338aa4`.
+- Complete user-facing breakdown: [`docs/releases/0.9.1.md`](docs/releases/0.9.1.md).
+
 ## 0.9.0 — 2026-09-20
 
 ### Minimal layout refinement

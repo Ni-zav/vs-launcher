@@ -1,5 +1,9 @@
 # VS Launcher
 
+**First public release: 0.9.1 · Android 8.0+ · package `com.vslauncher`**
+
+Download the APK and read the complete release breakdown in [`docs/releases/0.9.1.md`](docs/releases/0.9.1.md). The current architecture, verification evidence, known boundaries, and release identity are tracked in [`docs/AUDIT.md`](docs/AUDIT.md); this replaces the old 0.4-era audit.
+
 VS Launcher is a native, text-first Android home screen written in Java with platform APIs. Version 0.9 keeps the production APK deliberately small: an absolute-black Canvas, a fixed neutral monochrome hierarchy, direct gestures, latent utilities, lazy virtual accessibility nodes, no continuous render loop, and no production UI framework.
 
 ## Interaction
@@ -127,7 +131,7 @@ VS Launcher uses Android's launcher APIs rather than duplicating profile state.
 - Locked/paused profile apps are not enumerated into Apps or search.
 - Private Space can be hidden from the existing Hidden apps manager; users without Private Space get no extra setting.
 - Private Space apps are never eligible for persistent Home slots or swipe-up quick launch.
-- Personal-profile preference keys remain compatible with 0.5.
+- Existing personal/work Home slots and quick-launch assignments remain compatible across the 0.7–0.9 configuration format.
 
 ## Performance model
 
