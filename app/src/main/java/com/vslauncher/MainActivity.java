@@ -592,6 +592,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void addSearch(boolean focus) {
         surface.setSearchActive(true);
+        filteredApps = AppRepository.filter(apps, query, normalizedAliases, aliasInitials);
+        searchResults = buildSearchResults(query, filteredApps);
+        surface.setFilteredApps(filteredApps);
+        surface.setSearchResults(searchResults);
+
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextColor(DesignTokens.TEXT_PRIMARY);
