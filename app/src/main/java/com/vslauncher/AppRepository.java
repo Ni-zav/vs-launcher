@@ -86,14 +86,21 @@ final class AppRepository {
                     ? null
                     : normalizedAliases.get(app.componentKey);
 
-            if (app.normalizedLabel.startsWith(normalized)) {
-                canonicalPrefix.add(app);
-            } else if (alias != null && alias.startsWith(normalized)) {
-                aliasPrefix.add(app);
-            } else if (app.normalizedLabel.contains(normalized)) {
-                canonicalSubstring.add(app);
-            } else if (alias != null && alias.contains(normalized)) {
-                aliasSubstring.add(app);
+            switch (SearchRanking.rank(app.normalizedLabel, alias, normalized)) {
+                case SearchRanking.CANONICAL_PREFIX:
+                    canonicalPrefix.add(app);
+                    break;
+                case SearchRanking.ALIAS_PREFIX:
+                    aliasPrefix.add(app);
+                    break;
+                case SearchRanking.CANONICAL_SUBSTRING:
+                    canonicalSubstring.add(app);
+                    break;
+                case SearchRanking.ALIAS_SUBSTRING:
+                    aliasSubstring.add(app);
+                    break;
+                default:
+                    break;
             }
         }
 
