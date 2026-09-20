@@ -49,6 +49,7 @@ final class LauncherSurface extends View {
     interface Host {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
+        void onSearchResultTapped(SearchResult result);
         void onHomeSlotLongPressed(int index);
         void onEmptyHomeSlotTapped(int index);
         void onAllAppsLongPressed(AppEntry app);
@@ -109,6 +110,8 @@ final class LauncherSurface extends View {
 
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
+    private List<SearchResult> searchResults = Collections.emptyList();
+    private float[] searchMetaWidths = new float[0];
     private List<AppListItem> browseItems = Collections.emptyList();
     private float[] browseValueWidths = new float[0];
     private List<AppEntry> homeApps = Collections.emptyList();
@@ -342,6 +345,19 @@ final class LauncherSurface extends View {
         invalidate();
     }
 
+    void setSearchResults(List<SearchResult> results) {
+        searchResults = results == null ? Collections.emptyList() : results;
+        searchMetaWidths = new float[searchResults.size()];
+        for (int i = 0; i < searchResults.size(); i++) {
+            String meta = searchResults.get(i).meta;
+            searchMetaWidths[i] = meta.isEmpty() ? 0f : labelPaint.measureText(meta);
+        }
+        updateAppCountCache();
+        appScroll = 0f;
+        scroller.abortAnimation();
+        if (page == PAGE_APPS) invalidate();
+    }
+
     void setBrowseItems(List<AppListItem> items) {
         browseItems = items == null ? Collections.emptyList() : items;
         browseValueWidths = new float[browseItems.size()];
@@ -369,7 +385,7 @@ final class LauncherSurface extends View {
     private void updateAppCountCache() {
         int count;
         if (searchActive) {
-            count = filteredApps.size();
+            count = searchResults.size();
         } else {
             count = 0;
             for (AppListItem item : browseItems) if (item.isApp()) count++;
@@ -380,13 +396,6 @@ final class LauncherSurface extends View {
 
     private void refreshAlphabetIndex() {
         java.util.Arrays.fill(alphabetFirstIndex, -1);
-
-        if (searchActive) {
-            for (int index = 0; index < filteredApps.size(); index++) {
-                cacheAlphabetRow(index, filteredApps.get(index));
-            }
-            return;
-        }
 
         for (int index = 0; index < browseItems.size(); index++) {
             AppListItem item = browseItems.get(index);
@@ -789,16 +798,14 @@ final class LauncherSurface extends View {
         float listBottom = appsViewportBottomPx;
 
         if (searchActive) {
-            if (filteredApps.isEmpty()) {
-                canvas.drawText("No matching apps", x, emptyAppsBaselinePx, metaPaint);
+            if (searchResults.isEmpty()) {
+                canvas.drawText("No matches", x, emptyAppsBaselinePx, metaPaint);
                 return;
             }
-            drawAppRows(
+            drawSearchRows(
                     canvas,
-                    filteredApps,
                     x,
                     listStart - appScroll,
-                    filteredApps.size(),
                     listStart,
                     listBottom
             );
@@ -834,6 +841,45 @@ final class LauncherSurface extends View {
                     titlePaint
             );
         }
+    }
+
+    private void drawSearchRows(
+            Canvas canvas,
+            float x,
+            float startY,
+            float clipTop,
+            float clipBottom
+    ) {
+        int count = searchResults.size();
+        int first = LauncherLayout.firstVisibleIndex(clipTop, startY, rowHeightPx, count);
+        int last = LauncherLayout.lastVisibleExclusive(clipBottom, startY, rowHeightPx, count);
+        if (last <= first) return;
+
+        int save = canvas.save();
+        canvas.clipRect(x, clipTop, getWidth() - x, clipBottom);
+
+        float baselineOffset = rowHeightPx * 0.62f;
+        float right = getWidth() - x;
+        for (int i = first; i < last; i++) {
+            float rowTop = startY + i * rowHeightPx;
+            SearchResult result = searchResults.get(i);
+            boolean pressed = i == pressedAppIndex;
+            Paint rowPaint = pressed
+                    ? appPressedPaint
+                    : i == 0 ? appPrimaryPaint : appPaint;
+
+            canvas.drawText(result.label, x, rowTop + baselineOffset, rowPaint);
+            if (!result.meta.isEmpty()) {
+                canvas.drawText(
+                        result.meta,
+                        right - searchMetaWidths[i],
+                        rowTop + baselineOffset,
+                        pressed ? metaPressedPaint : labelPaint
+                );
+            }
+        }
+
+        canvas.restoreToCount(save);
     }
 
     private void drawAppRows(
@@ -1371,6 +1417,11 @@ final class LauncherSurface extends View {
             int index = allAppsIndexAt(x, y);
             if (index < 0) return;
 
+            if (searchActive) {
+                if (index < searchResults.size()) host.onSearchResultTapped(searchResults.get(index));
+                return;
+            }
+
             AppEntry app = appAtVisibleIndex(index);
             if (app != null) {
                 host.onOpenApp(app);
@@ -1481,14 +1532,16 @@ final class LauncherSurface extends View {
         if (y < appsViewportTopPx || y >= appsViewportBottomPx || rowHeightPx <= 0f) return -1;
 
         float start = appsViewportTopPx - appScroll;
-        int count = searchActive ? filteredApps.size() : browseItems.size();
+        int count = searchActive ? searchResults.size() : browseItems.size();
         return LauncherLayout.rowIndexAt(y, start, rowHeightPx, count);
     }
 
     private AppEntry appAtVisibleIndex(int index) {
         if (index < 0) return null;
         if (searchActive) {
-            return index < filteredApps.size() ? filteredApps.get(index) : null;
+            if (index >= searchResults.size()) return null;
+            SearchResult result = searchResults.get(index);
+            return result.isApp() ? result.app : null;
         }
         if (index >= browseItems.size()) return null;
         AppListItem item = browseItems.get(index);
@@ -1539,7 +1592,7 @@ final class LauncherSurface extends View {
 
     private float maxAppScroll() {
         float viewport = Math.max(0f, appsViewportBottomPx - appsViewportTopPx);
-        int count = searchActive ? filteredApps.size() : browseItems.size();
+        int count = searchActive ? searchResults.size() : browseItems.size();
         return LauncherLayout.maxScroll(count, rowHeightPx, viewport);
     }
 
