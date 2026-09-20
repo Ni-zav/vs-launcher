@@ -25,12 +25,14 @@ import android.provider.CalendarContract;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.Spannable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -97,6 +99,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private boolean packageReceiverRegistered;
     private boolean appsBrowseMode;
     private Runnable pendingSingleResultLaunch;
+    private long searchEditGeneration;
+    private String autoLaunchCandidateKey = "";
     private Runnable undoAction;
     private Runnable pendingUndoClear;
 
@@ -635,7 +639,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
                 surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
-                scheduleSingleResultLaunch(normalizedQuery, searchResults);
+                scheduleSingleResultLaunch(
+                        query,
+                        normalizedQuery,
+                        searchResults,
+                        isImeComposing(s)
+                );
             }
 
             @Override public void afterTextChanged(Editable s) {
@@ -688,7 +697,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void removeSearch() {
-        cancelPendingSingleResultLaunch();
+        resetSingleResultLaunchState();
         if (search == null) {
             query = "";
             normalizedQuery = "";
@@ -721,32 +730,61 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             List<AppEntry> appMatches
     ) {
         ArrayList<SearchResult> results = new ArrayList<>(
-                appMatches.size() + 6
+                appMatches.size() + 7
         );
         for (AppEntry app : appMatches) results.add(SearchResult.app(app));
 
         if (!normalizedQuery.isEmpty()) {
+            int firstAppRank = appMatches.isEmpty()
+                    ? SearchRanking.NO_MATCH
+                    : appMatchRank(appMatches.get(0), normalizedQuery);
+
+            // Passive SYSTEM commands remain after apps. Explicit structured
+            // intent is inserted first so Go/Enter never sacrifices CALC,
+            // TIMER/ALARM, DIAL, OPEN or deliberate WEB behavior.
             for (SearchCommand command : SearchCommand.matchingNormalized(normalizedQuery)) {
                 results.add(SearchResult.command(command));
             }
 
+            int nonAppResultCount = results.size() - appMatches.size();
+
             String dial = QueryActions.dialPayload(rawQuery);
-            if (dial != null) results.add(SearchResult.dial(dial));
+            if (dial != null) {
+                results.add(0, SearchResult.dial(dial));
+                nonAppResultCount++;
+            }
 
             String url = QueryActions.urlPayload(rawQuery);
-            if (url != null) results.add(SearchResult.url(url));
+            if (url != null) {
+                results.add(0, SearchResult.url(url));
+                nonAppResultCount++;
+            }
 
             TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
-            if (timer != null) results.add(SearchResult.timer(timer));
+            if (timer != null) {
+                results.add(0, SearchResult.timer(timer));
+                nonAppResultCount++;
+            }
 
             TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
-            if (alarm != null) results.add(SearchResult.alarm(alarm));
+            if (alarm != null) {
+                results.add(0, SearchResult.alarm(alarm));
+                nonAppResultCount++;
+            }
 
             String calculation = CalculatorAction.evaluate(rawQuery);
-            if (calculation != null) results.add(SearchResult.calculation(calculation));
+            if (calculation != null) {
+                results.add(0, SearchResult.calculation(calculation));
+                nonAppResultCount++;
+            }
 
-            if (QueryActions.shouldOfferWebFallback(normalizedQuery, results.size())) {
-                results.add(SearchResult.web(rawQuery.trim()));
+            if (SearchAutoLaunchPolicy.shouldOfferWebFallback(
+                    normalizedQuery,
+                    appMatches.size(),
+                    firstAppRank,
+                    nonAppResultCount
+            )) {
+                results.add(0, SearchResult.web(rawQuery.trim()));
             }
         }
 
@@ -755,9 +793,22 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 : Collections.unmodifiableList(results);
     }
 
+    private int appMatchRank(AppEntry app, String currentNormalizedQuery) {
+        if (app == null) return SearchRanking.NO_MATCH;
+        String alias = normalizedAliases.get(app.componentKey);
+        String initials = aliasInitials.get(app.componentKey);
+        return SearchAutoLaunchPolicy.rank(
+                app.normalizedLabel,
+                alias,
+                app.searchInitials,
+                initials,
+                currentNormalizedQuery
+        );
+    }
+
     private void executeSearchResult(SearchResult result) {
         if (result == null) return;
-        cancelPendingSingleResultLaunch();
+        resetSingleResultLaunchState();
 
         if (result.isApp()) {
             launchApp(result.app);
@@ -922,26 +973,66 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void scheduleSingleResultLaunch(
+            String currentRawQuery,
             String currentNormalizedQuery,
-            List<SearchResult> currentResults
+            List<SearchResult> currentResults,
+            boolean imeComposing
     ) {
         cancelPendingSingleResultLaunch();
-        if (currentNormalizedQuery.isEmpty()) return;
+        long generation = ++searchEditGeneration;
+
+        if (currentNormalizedQuery.isEmpty()) {
+            autoLaunchCandidateKey = "";
+            return;
+        }
 
         SearchResult onlyApp = singleAppResult(currentResults);
-        if (onlyApp == null) return;
+        if (onlyApp == null) {
+            autoLaunchCandidateKey = "";
+            return;
+        }
 
+        String candidateKey = onlyApp.app.componentKey;
+        boolean sameCandidate = candidateKey.equals(autoLaunchCandidateKey);
+        String alias = normalizedAliases.get(candidateKey);
+        String initials = aliasInitials.get(candidateKey);
+        long delayMs = SearchAutoLaunchPolicy.delayMs(
+                currentRawQuery,
+                currentNormalizedQuery,
+                onlyApp.app.normalizedLabel,
+                alias,
+                onlyApp.app.searchInitials,
+                initials,
+                imeComposing,
+                sameCandidate
+        );
+        if (delayMs == SearchAutoLaunchPolicy.BLOCKED) {
+            autoLaunchCandidateKey = "";
+            return;
+        }
+
+        autoLaunchCandidateKey = candidateKey;
         pendingSingleResultLaunch = () -> {
             pendingSingleResultLaunch = null;
             if (search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
+                    || generation != searchEditGeneration
+                    || !currentRawQuery.equals(query)
                     || !currentNormalizedQuery.equals(normalizedQuery)
-                    || singleAppResult(searchResults) != onlyApp) {
+                    || isImeComposing(search.getText())) {
                 return;
             }
-            launchApp(onlyApp.app);
+
+            SearchResult currentOnlyApp = singleAppResult(searchResults);
+            if (currentOnlyApp == null
+                    || !candidateKey.equals(currentOnlyApp.app.componentKey)) {
+                return;
+            }
+
+            autoLaunchCandidateKey = "";
+            launchApp(currentOnlyApp.app);
         };
-        mainHandler.postDelayed(pendingSingleResultLaunch, 160L);
+        mainHandler.postDelayed(pendingSingleResultLaunch, delayMs);
     }
 
     private static SearchResult singleAppResult(List<SearchResult> results) {
@@ -959,6 +1050,20 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (pendingSingleResultLaunch == null) return;
         mainHandler.removeCallbacks(pendingSingleResultLaunch);
         pendingSingleResultLaunch = null;
+    }
+
+    private void resetSingleResultLaunchState() {
+        cancelPendingSingleResultLaunch();
+        searchEditGeneration++;
+        autoLaunchCandidateKey = "";
+    }
+
+    private static boolean isImeComposing(CharSequence text) {
+        if (!(text instanceof Spannable)) return false;
+        Spannable spannable = (Spannable) text;
+        int start = BaseInputConnection.getComposingSpanStart(spannable);
+        int end = BaseInputConnection.getComposingSpanEnd(spannable);
+        return start >= 0 && end > start;
     }
 
     @Override public void onPageRequested(int page) {
