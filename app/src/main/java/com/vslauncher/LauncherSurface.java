@@ -1900,7 +1900,10 @@ final class LauncherSurface extends View {
     private int accessibilityStatusIdAt(float x, float y) {
         float midpoint = getWidth() * 0.5f;
         if (y >= weatherTapTopPx && y <= weatherTapBottomPx) {
-            if (uiConfig.showBattery && x >= midpoint) return A11Y_BATTERY;
+            if (uiConfig.showWeather && uiConfig.showBattery) {
+                return x >= midpoint ? A11Y_BATTERY : A11Y_WEATHER;
+            }
+            if (uiConfig.showBattery) return A11Y_BATTERY;
             if (uiConfig.showWeather) return A11Y_WEATHER;
         }
 

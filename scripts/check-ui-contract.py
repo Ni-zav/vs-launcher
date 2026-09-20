@@ -101,6 +101,12 @@ if "alphabetRailX - alphabetWidths[i] * 0.5f" not in alphabet_rail:
 if "alphabetActiveIndex * alphabetStepPx" not in alphabet_rail:
     errors.append("Active alphabet glyph must remain on its own rail position")
 
+accessibility_status = method_body(surface, "accessibilityStatusIdAt")
+if "uiConfig.showWeather && uiConfig.showBattery" not in accessibility_status:
+    errors.append("Status accessibility hit testing must mirror single/paired status layout")
+if "if (uiConfig.showBattery) return A11Y_BATTERY" not in accessibility_status:
+    errors.append("Battery-only status must expose the full status interaction region")
+
 home_rows = method_body(surface, "drawHomeRows")
 for required in ("homeTextXPx", "homeRowHeightPx", "homePaint", "homeHintPaint"):
     if required not in home_rows:
