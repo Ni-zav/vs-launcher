@@ -49,6 +49,7 @@ final class LauncherSurface extends View {
     interface Host {
         void onPageRequested(int page);
         void onOpenApp(AppEntry app);
+        void onOpenHomeShortcut(AppEntry app, String shortcutId);
         void onSearchResultTapped(SearchResult result);
         void onHomeSlotLongPressed(int index);
         void onEmptyHomeSlotTapped(int index);
@@ -116,6 +117,7 @@ final class LauncherSurface extends View {
     private float[] browseValueWidths = new float[0];
     private List<AppEntry> homeApps = Collections.emptyList();
     private List<String> homeLabels = Collections.emptyList();
+    private List<String> homeShortcutIds = Collections.emptyList();
 
     private String dateText = "";
     private String timeText = "";
@@ -431,11 +433,13 @@ final class LauncherSurface extends View {
     void setHomeConfiguration(
             List<AppEntry> home,
             List<String> labels,
+            List<String> shortcutIds,
             int max,
             String quickLabel
     ) {
         homeApps = home == null ? Collections.emptyList() : home;
         homeLabels = labels == null ? Collections.emptyList() : labels;
+        homeShortcutIds = shortcutIds == null ? Collections.emptyList() : shortcutIds;
         maxHomeApps = Math.max(1, Math.min(8, max));
         quickAppLabel = quickLabel == null ? "Not set" : quickLabel;
         homeCountText = Integer.toString(maxHomeApps);
@@ -1395,7 +1399,12 @@ final class LauncherSurface extends View {
             int index = homeIndexAt(x, y);
             if (index >= 0 && index < homeApps.size()) {
                 AppEntry app = homeApps.get(index);
-                if (app != null) {
+                String shortcutId = index < homeShortcutIds.size()
+                        ? homeShortcutIds.get(index)
+                        : "";
+                if (app != null && shortcutId != null && !shortcutId.isEmpty()) {
+                    host.onOpenHomeShortcut(app, shortcutId);
+                } else if (app != null) {
                     host.onOpenApp(app);
                 } else if (isFirstVisibleEmptyHomeSlot(index)) {
                     host.onEmptyHomeSlotTapped(index);
