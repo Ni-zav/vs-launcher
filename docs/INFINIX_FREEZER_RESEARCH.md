@@ -809,3 +809,153 @@ This is ranked above undocumented XOS shell tweaks because:
 - package-scoped remedies already attempted on this device did not hold
 
 It is still broader than desired and must be recorded as such.
+
+
+---
+
+## Batch 6 — package/process-scoped alternatives
+
+### 1. `am unfreeze --sticky` is a real current AOSP command
+
+Current AOSP `ActivityManagerShellCommand` documents:
+
+~~~text
+freeze [--sticky] <PROCESS>
+unfreeze [--sticky] <PROCESS>
+~~~
+
+For unfreeze, AOSP describes `--sticky` as persisting the unfrozen state for
+the **process lifetime**, or until a shell freeze is triggered.
+
+Primary source:
+
+- https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/am/ActivityManagerShellCommand.java
+
+The implementation resolves the supplied process name or PID to a
+`ProcessRecord`, marks its freezer record sticky, and calls the ActivityManager
+unfreeze path.
+
+### 2. Scope: process-specific, not a persistent package exemption
+
+This is materially narrower than `use_freezer=false`.
+
+Example, after the controller exists:
+
+~~~sh
+PID="$(adb shell pidof com.vslauncher.macrobenchmark | tr -d '\r')"
+adb shell am unfreeze --sticky "$PID"
+~~~
+
+or, when the process name resolves uniquely:
+
+~~~sh
+adb shell am unfreeze --sticky com.vslauncher.macrobenchmark
+~~~
+
+Important limitations:
+
+- the exemption is tied to the current process lifetime
+- a newly-created controller process requires a new sticky unfreeze
+- this is not a package-manager policy persisted across process recreation
+- it does not document any special protection against a separate OEM/XOS
+  freezer implementation outside the normal ActivityManager path
+
+### 3. Why the already-observed failure matters
+
+The affected X6855 has already been tested with sticky unfreeze and still
+reproduced the controller freeze.
+
+Before declaring this path definitively ineffective, the device report should
+record whether the command was applied:
+
+1. after the final instrumentation controller PID existed
+2. to that exact PID/process
+3. before the previously reproducible freeze point
+4. without the controller being recreated afterward
+
+Recommended verification sequence:
+
+~~~sh
+PID="$(adb shell pidof com.vslauncher.macrobenchmark | tr -d '\r')"
+echo "controller pid=$PID"
+
+adb shell am unfreeze --sticky "$PID"
+adb shell cat "/proc/$PID/cgroup"
+adb shell dumpsys activity instrumentation
+~~~
+
+If the PID changes after the sticky command:
+
+~~~sh
+NEW_PID="$(adb shell pidof com.vslauncher.macrobenchmark | tr -d '\r')"
+printf 'old=%s new=%s\n' "$PID" "$NEW_PID"
+~~~
+
+then the original sticky state does not apply to the new process.
+
+If the **same PID** later reports `frozen 1`, that is strong evidence that the
+device is not honoring the expected AOSP process-scoped freezer behavior for
+this workload, or that another freezer path is involved.
+
+### 4. Foreground-service tricks are not a valid benchmark architecture change
+
+Android documents foreground services as a way to keep user-noticeable work at
+higher process importance.
+
+Primary sources:
+
+- https://developer.android.com/develop/background-work/services/fgs
+- https://developer.android.com/topic/performance/memory/guide/service-bindings
+
+However, converting the Macrobenchmark controller architecture into a
+foreground-service-driven design is not an appropriate fix:
+
+- AndroidX Macrobenchmark intentionally runs out of process
+- a foreground service changes process importance and runtime conditions
+- adding a fake user-visible foreground service purely to manipulate benchmark
+  survivability is not representative app behavior
+- the user already tested temporary foreground-service delegation without
+  obtaining a stable result
+
+Foreground-service state is useful as a diagnostic comparison only, not as the
+production benchmark solution.
+
+### 5. Ranked scope of the verified controls so far
+
+From narrowest to broadest:
+
+1. **`am unfreeze --sticky <controller-pid>`**
+   - scope: current process
+   - reboot: no
+   - persistence: process lifetime only
+   - already failed on this device unless prior test targeted an obsolete PID
+
+2. **ordinary package/background policy controls**
+   - battery unrestricted / DeviceIdle allowlist / app-op / inactive-state
+   - scope: package/background policy
+   - reboot: normally no
+   - already failed on this device
+
+3. **XOS global background-power setting**
+   - scope: vendor/device-wide
+   - undocumented for Macrobenchmark
+   - already tested and restored
+   - not preferred because semantics are not publicly documented
+
+4. **AOSP `use_freezer=false`**
+   - scope: device-wide cached-app freezer
+   - reboot: yes
+   - documented by AOSP
+   - exact rollback available
+   - currently the strongest reproducible fallback if the same controller PID
+     defeats sticky unfreeze
+
+### Batch 6 conclusion
+
+Before using the global workaround, perform one final controlled sticky-unfreeze
+check against the exact live controller PID.
+
+If the same PID is still active instrumentation and later enters a cgroup with
+`frozen 1`, stop spending time on ordinary package-scoped freezer remedies.
+That result would justify moving to the reversible device-wide AOSP diagnostic
+for this particular Infinix test session.
