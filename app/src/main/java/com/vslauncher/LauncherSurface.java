@@ -713,9 +713,12 @@ final class LauncherSurface extends View {
             Paint rowPaint = pressed ? appInversePaint : appPaint;
             Paint hintPaint = pressed ? metaInversePaint : metaPaint;
 
+            String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
             if (app != null) {
-                String label = index < homeLabels.size() ? homeLabels.get(index) : app.label;
+                String label = configuredLabel.isEmpty() ? app.label : configuredLabel;
                 canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
+            } else if (!configuredLabel.isEmpty()) {
+                canvas.drawText(configuredLabel, x, rowTop + baselineOffset, hintPaint);
             } else if (!emptyHintDrawn) {
                 canvas.drawText("+ ADD APP", x, rowTop + baselineOffset, hintPaint);
                 emptyHintDrawn = true;
@@ -1483,7 +1486,8 @@ final class LauncherSurface extends View {
     private boolean isFirstVisibleEmptyHomeSlot(int candidate) {
         for (int i = 0; i < visibleHomeRowsCache; i++) {
             AppEntry app = i < homeApps.size() ? homeApps.get(i) : null;
-            if (app == null) return i == candidate;
+            String label = i < homeLabels.size() ? homeLabels.get(i) : "";
+            if (app == null && label.isEmpty()) return i == candidate;
         }
         return false;
     }
