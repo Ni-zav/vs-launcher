@@ -63,16 +63,26 @@
 
 - Set/select as HOME app:
 - Home renders:
-- Swipe left → focused Apps search:
-- Singleton result / keyboard Go launch:
-- First Apps browse drag → search hidden + A–Z visible:
-- A–Z fast scroll:
+- Swipe left → focused borderless Apps search:
+- Tap APPS / pull-at-top → search re-entry:
+- Back Search → Browse → Home:
+- Singleton app launch with command rows present:
+- Command-only result does not auto-launch:
+- SYSTEM command actions:
+- DIAL / OPEN query actions:
+- First Apps browse drag → search hidden + A–Z + # visible:
+- A–Z + # fast scroll:
+- Monochrome luminance hierarchy / no row flash:
 - Swipe right → Settings:
 - Swipe up quick launch:
 - Swipe down intentionally unused:
 - + ADD APP direct tap:
 - Home long-press menu:
 - App long-press / native shortcuts:
+- Pin native shortcut to Home:
+- Pinned shortcut launch:
+- Pinned shortcut export/import:
+- Hide / clear / shortcut-remove transient Undo:
 - Semantic time/date/battery/weather taps:
 - Hidden app behavior:
 - Work profile behavior (if present):
