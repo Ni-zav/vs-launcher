@@ -48,7 +48,7 @@ After the workflow is green:
 Inside it is:
 
 ```text
-VS-Launcher-0.4.0-debug.apk
+VS-Launcher-0.5.0-debug.apk
 ```
 
 The artifact is retained for 14 days.
@@ -142,7 +142,7 @@ The script:
 Output:
 
 ```text
-dist/VS-Launcher-0.4.0-debug.apk
+dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 The raw Android Gradle output also remains at:
@@ -156,14 +156,14 @@ app/build/outputs/apk/debug/app-debug.apk
 Enable Developer Options + USB debugging on the phone, connect it, then:
 
 ```sh
-adb install -r dist/VS-Launcher-0.4.0-debug.apk
+adb install -r dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 If the installed copy was signed with a different key, uninstall it first:
 
 ```sh
 adb uninstall com.vslauncher
-adb install dist/VS-Launcher-0.4.0-debug.apk
+adb install dist/VS-Launcher-0.5.0-debug.apk
 ```
 
 Then press Home and select VS Launcher.
