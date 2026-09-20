@@ -521,3 +521,291 @@ with emphasis on:
 4. whether disabling the freezer invalidates Baseline Profile generation
 5. whether startup A/B remains defensible when both arms use the identical
    freezer-disabled environment
+
+
+---
+
+## Batch 5 — evaluated use_freezer=false diagnostic and measurement validity
+
+### 1. This is an AOSP-documented global diagnostic
+
+AOSP explicitly documents disabling the cached-app freezer with:
+
+~~~sh
+adb shell device_config put activity_manager_native_boot use_freezer false
+adb reboot
+~~~
+
+Primary source:
+
+- https://source.android.com/docs/core/perf/cached-apps-freezer
+
+The same source states that the freezer uses kernel cgroup v2 and that disabling
+use_freezer disables freezing globally.
+
+This is therefore:
+
+- supported as an AOSP diagnostic/configuration mechanism
+- device-wide
+- not a package-scoped Macrobenchmark exception
+- appropriate only as a temporary controlled test on this personal device,
+  followed by explicit rollback
+
+It does not root the phone or modify the system image, but it does change
+ActivityManager behavior for cached apps across the device.
+
+### 2. Exact save / disable / verify procedure
+
+Create a result directory before changing the device:
+
+~~~sh
+RESULT_DIR="device-test-results/freezer-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$RESULT_DIR"
+~~~
+
+Capture the original override verbatim:
+
+~~~sh
+adb shell device_config get activity_manager_native_boot use_freezer \
+  | tr -d '\r' \
+  | tee "$RESULT_DIR/use_freezer.before.txt"
+~~~
+
+Also capture current ActivityManager diagnostics:
+
+~~~sh
+adb shell dumpsys activity \
+  | grep -A 50 "CachedAppOptimizer settings" \
+  | tee "$RESULT_DIR/cached-app-optimizer.before.txt"
+~~~
+
+Disable the freezer:
+
+~~~sh
+adb shell device_config put activity_manager_native_boot use_freezer false
+adb reboot
+~~~
+
+Wait for ADB to return:
+
+~~~sh
+adb wait-for-device
+~~~
+
+Unlock the phone if required, then verify:
+
+~~~sh
+adb shell device_config get activity_manager_native_boot use_freezer
+adb shell dumpsys activity | grep -A 50 "CachedAppOptimizer settings"
+~~~
+
+Expected explicit DeviceConfig value: false.
+
+Do not start collecting benchmark results until the reboot has completed and
+the phone has returned to a stable thermal/idle state.
+
+### 3. Exact rollback
+
+Read the saved value:
+
+~~~sh
+ORIGINAL="$(cat "$RESULT_DIR/use_freezer.before.txt" | tr -d '\r\n')"
+printf 'original use_freezer=%s\n' "$ORIGINAL"
+~~~
+
+If the original value was explicitly true or false:
+
+~~~sh
+adb shell device_config put activity_manager_native_boot use_freezer "$ORIGINAL"
+adb reboot
+~~~
+
+If the original value was unset / null:
+
+~~~sh
+adb shell device_config delete activity_manager_native_boot use_freezer
+adb reboot
+~~~
+
+AOSP documents the generic device_config delete namespace/key pattern for
+reverting DeviceConfig overrides. Deleting an originally absent override is
+preferable to replacing it with a permanent explicit true.
+
+After reboot:
+
+~~~sh
+adb wait-for-device
+adb shell device_config get activity_manager_native_boot use_freezer \
+  | tee "$RESULT_DIR/use_freezer.after-rollback.txt"
+
+adb shell dumpsys activity \
+  | grep -A 50 "CachedAppOptimizer settings" \
+  | tee "$RESULT_DIR/cached-app-optimizer.after-rollback.txt"
+~~~
+
+Compare the before/after files before declaring rollback complete.
+
+### 4. Verify that this actually fixes the controller freeze
+
+Do not infer success merely because use_freezer=false was accepted.
+
+Run the previously failing Macrobenchmark/Profile journey and, while it is
+active, capture:
+
+~~~sh
+PID="$(adb shell pidof com.vslauncher.macrobenchmark | tr -d '\r')"
+echo "controller pid=$PID"
+
+adb shell dumpsys activity instrumentation
+adb shell cat "/proc/$PID/cgroup"
+~~~
+
+Resolve the cgroup path and inspect its cgroup.events.
+
+The controller must no longer show:
+
+~~~text
+frozen 1
+~~~
+
+For the relevant cgroup, expected state while the controller is executing is:
+
+~~~text
+frozen 0
+~~~
+
+Also capture:
+
+~~~sh
+adb shell cat "/proc/$PID/status"
+adb logcat -d | grep -i -E 'freez|CachedAppOptimizer|ActivityManager'
+~~~
+
+Success criteria:
+
+1. controller remains alive
+2. instrumentation remains registered
+3. controller progresses beyond the previously reproducible stall point
+4. cgroup does not report frozen 1
+5. benchmark/profile generation completes normally
+
+### 5. Baseline Profile generation validity
+
+Baseline Profile generation records the target application's executed
+classes/methods for representative user journeys; it is not itself the final
+timing comparison.
+
+If the X6855 cannot keep the controller alive otherwise, it is reasonable to
+use the temporary freezer-disabled environment to generate a candidate profile,
+provided:
+
+- the app/user journey is unchanged
+- the generated profile is treated as a candidate
+- no performance conclusion is drawn from the generation run itself
+- the profile is subsequently tested in the release-like benchmark variant
+
+This is an engineering inference from the role of Baseline Profile generation;
+AOSP does not specifically certify use_freezer=false as a Baseline Profile
+generation mode.
+
+### 6. Preferred A/B methodology
+
+Best evidence, in order:
+
+#### Preferred
+
+1. disable freezer only to generate the candidate profile
+2. rollback use_freezer
+3. reboot
+4. confirm rollback
+5. run both startup arms with normal freezer behavior:
+   - CompilationMode.None
+   - CompilationMode.Partial(BaselineProfileMode.Require)
+
+This best represents the normal device configuration.
+
+#### Fallback when the controller freezes again after rollback
+
+If Macrobenchmark cannot complete with the normal freezer enabled:
+
+1. capture the failure as evidence
+2. disable the freezer again using the recorded procedure
+3. allow the device to stabilize
+4. run both A and B under the exact same freezer-disabled state
+5. use the same phone, build, refresh rate and thermal preparation
+6. optionally use AndroidX's documented
+   androidx.benchmark.junit4.SideEffectRunListener to reduce unrelated
+   background work
+7. label the result:
+
+~~~text
+controlled A/B under device-wide cached-app freezer disabled
+~~~
+
+This remains useful relative evidence for whether the profile improves the same
+workload, but its absolute startup numbers are not fully representative of
+normal XOS/AOSP background-process policy.
+
+Why: globally disabling the cached-app freezer can allow unrelated cached apps
+to receive CPU time. Android Developers explicitly warns that unrelated
+background work can make benchmark results inconsistent.
+
+Primary sources:
+
+- https://developer.android.com/topic/performance/benchmarking/macrobenchmark-instrumentation-args
+- https://developer.android.com/topic/performance/baselineprofiles/measure-baselineprofile
+
+### 7. Do not compare mismatched freezer states
+
+Invalid comparison:
+
+~~~text
+A: freezer enabled
+B: freezer disabled
+~~~
+
+or the reverse.
+
+Any difference would combine the Baseline Profile effect with changed global
+cached-process scheduling/background contention and could not be attributed
+cleanly to the profile.
+
+### 8. Developer Option is equivalent in scope
+
+AOSP also documents the Developer Option:
+
+~~~text
+Suspend execution for cached apps
+~~~
+
+as another way to control the cached-app freezer.
+
+Turning this off is still a device-wide freezer policy change. It is not a
+package-scoped alternative to the DeviceConfig flag.
+
+For reproducibility, the explicit DeviceConfig value plus captured rollback is
+preferable for this investigation because it can be logged exactly.
+
+### Batch 5 conclusion
+
+If the next physical-device evidence confirms that the controller is still
+active instrumentation when XOS freezes it, the current least-invasive verified
+and reproducible workaround is:
+
+~~~text
+temporarily disable the AOSP cached-app freezer device-wide
+→ reboot
+→ generate/run controlled tests
+→ restore the exact original DeviceConfig state
+→ reboot
+~~~
+
+This is ranked above undocumented XOS shell tweaks because:
+
+- it is documented by AOSP
+- its scope is known
+- its effect is directly verifiable
+- rollback is explicit
+- package-scoped remedies already attempted on this device did not hold
+
+It is still broader than desired and must be recorded as such.
