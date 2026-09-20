@@ -630,6 +630,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         showHomeSlotMenu(index);
     }
 
+    @Override public void onEmptyHomeSlotTapped(int index) {
+        if (index < 0 || index >= maxHomeApps) return;
+        showHomeAppPicker(index);
+    }
+
     @Override public void onAllAppsLongPressed(AppEntry app) {
         if (app == null) return;
         appRepository.loadShortcuts(app, shortcuts -> showAppActions(app, shortcuts));
