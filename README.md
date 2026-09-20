@@ -11,7 +11,7 @@ VS Launcher is a native, text-first Android home screen written in Java with pla
 - **Swipe right** from Home → Settings.
 - **Swipe up** from Home → the configured quick-launch app.
 - **Swipe down** from Home → intentionally unused.
-- **Type until one app remains** → the singleton stays auto-launchable, but only after an intent-aware quiet period. Continued typing cancels the pending launch; exact app/alias matches resolve faster; IME composition, forming calculator/timer/alarm/URL intent, structured actions, and general-text WEB intent suppress it.
+- **Type until one app remains** → the singleton stays auto-launchable, but only after an intent-aware quiet period. Continued typing cancels the pending launch; exact app/alias matches resolve faster; composition-sensitive CJK IMEs, forming calculator/timer/alarm/URL intent, structured actions, and general-text WEB intent suppress it. Numeric-only singleton queries get a longer grace period so keyboard long-press operators can arrive before an app fires.
 - **Keyboard Go/Enter** → launches the first ranked result immediately.
 - **Utility queries** → `timer 10m`, `alarm 07:30`, `23*17`, system commands, direct dial/URL actions, and explicit web fallback stay inside the same search surface.
 - **Tap + ADD APP** → open the Home app picker directly.
@@ -71,7 +71,7 @@ App ranking remains deterministic:
 
 Normalization is forgiving but deterministic: accents are stripped for matching and punctuation/repeated whitespace collapse to word separators. For example, `Pokémon` matches `pokemon`, and `my-app` matches `my app`.
 
-Passive SYSTEM rows remain behind apps, but explicit structured intent is allowed to take the first row: DIAL, OPEN, TIMER, ALARM, CALC, or deliberate WEB. Those rows never auto-launch; tap or keyboard Go/Enter is required. A lone app still auto-launches after an intent-aware quiet period when the query remains app-like. Every edit cancels the previous pending launch, IME composing text cannot fire, and unfinished arithmetic/time/URL input blocks app auto-launch before the corresponding utility is fully parseable.
+Passive SYSTEM rows remain behind apps, but explicit structured intent is allowed to take the first row: DIAL, OPEN, TIMER, ALARM, CALC, or deliberate WEB. Those rows never auto-launch; tap or keyboard Go/Enter is required. A lone app still auto-launches after an intent-aware quiet period when the query remains app-like. Every edit cancels the previous pending launch. Latin Gboard composing spans do not suppress normal app launch; composition-sensitive CJK input still does. Numeric-only queries wait longer, and unfinished arithmetic/time/URL input blocks app auto-launch before the corresponding utility is fully parseable.
 
 Examples include `wifi`, `internet`, `volume`, `bluetooth`, `battery`, `settings`, `timer 10m`, `alarm 07:30`, `23*17`, `example.com`, `help`, `calendar`, `storage`, `keyboard`, `nfc`, `display`, `sound`, `location`, and `notifications`. `Search web` appears when nothing direct matches and may also coexist with weak app matches for sentence-like multi-word text, so a coincidental fuzzy app cannot steal a general query. VS itself performs no network search.
 
@@ -210,7 +210,7 @@ bash scripts/build-debug-apk.sh
 Output:
 
 ```text
-dist/VS-Launcher-0.9.0-debug.apk
+dist/VS-Launcher-0.9.1-debug.apk
 ```
 
 For sideloading, Android Studio, ADB, persistent release signing, and the SVG/adaptive-icon pipeline, see **[docs/BUILD_APK.md](docs/BUILD_APK.md)**.

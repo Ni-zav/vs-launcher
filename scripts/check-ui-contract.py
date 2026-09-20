@@ -224,6 +224,16 @@ for utility in (
 auto_launch_policy = (
     MAIN_SRC / "com/vslauncher/SearchAutoLaunchPolicy.java"
 ).read_text(encoding="utf-8")
+for required in (
+    "NUMERIC_SINGLETON_DELAY_MS = 1800L",
+    "shouldBlockImeComposition",
+    "regionMatches(true, 0, \"zh\"",
+    "regionMatches(true, 0, \"ja\"",
+    "regionMatches(true, 0, \"ko\"",
+):
+    if required not in auto_launch_policy:
+        errors.append(f"SearchAutoLaunchPolicy regression: missing {required}")
+
 for forbidden in (
     "List<",
     "for (AppEntry",
@@ -241,6 +251,8 @@ if "android.permission.QUERY_ALL_PACKAGES" in manifest:
     errors.append("Launcher must not request QUERY_ALL_PACKAGES")
 if "android.permission.ACCESS_HIDDEN_PROFILES" not in manifest:
     errors.append("Private Space support requires ACCESS_HIDDEN_PROFILES")
+if "com.android.alarm.permission.SET_ALARM" not in manifest:
+    errors.append("Timer/alarm actions require com.android.alarm.permission.SET_ALARM")
 
 token_values = {
     name: int(value, 16)

@@ -35,6 +35,7 @@ import android.view.WindowManager;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.InputMethodSubtype;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.Toast;
@@ -101,6 +102,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private Runnable pendingSingleResultLaunch;
     private long searchEditGeneration;
     private String autoLaunchCandidateKey = "";
+    private String searchImeLanguageTag = "";
     private Runnable undoAction;
     private Runnable pendingUndoClear;
 
@@ -617,6 +619,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         search.setBackground(null);
         search.setPadding(dp(8f), 0, dp(8f), 0);
         search.setContentDescription("Search all apps");
+        searchImeLanguageTag = currentImeLanguageTag();
 
         if (!query.isEmpty()) {
             search.setText(query);
@@ -649,7 +652,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         query,
                         normalizedQuery,
                         searchResults,
-                        isImeComposing(s)
+                        SearchAutoLaunchPolicy.shouldBlockImeComposition(
+                                isImeComposing(s),
+                                searchImeLanguageTag
+                        )
                 );
             }
         });
@@ -828,7 +834,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
                         .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
                         .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
-                if (launchExternalIntent(timer)) showTransientStatus("Timer set");
+                if (launchExternalIntent(timer)) {
+                    showTransientStatus("Timer set");
+                } else {
+                    showTransientStatus("Timer unavailable");
+                }
             } catch (NumberFormatException ignored) {
             }
             return;
@@ -845,7 +855,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                             .putExtra(AlarmClock.EXTRA_MINUTES, minute)
                             .putExtra(AlarmClock.EXTRA_MESSAGE, "VS Launcher")
                             .putExtra(AlarmClock.EXTRA_SKIP_UI, true);
-                    if (launchExternalIntent(alarm)) showTransientStatus("Alarm set · " + result.payload);
+                    if (launchExternalIntent(alarm)) {
+                        showTransientStatus("Alarm set · " + result.payload);
+                    } else {
+                        showTransientStatus("Alarm unavailable");
+                    }
                 } catch (NumberFormatException ignored) {
                 }
             }
@@ -1012,7 +1026,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     || generation != searchEditGeneration
                     || !currentRawQuery.equals(query)
                     || !currentNormalizedQuery.equals(normalizedQuery)
-                    || isImeComposing(search.getText())) {
+                    || SearchAutoLaunchPolicy.shouldBlockImeComposition(
+                            isImeComposing(search.getText()),
+                            searchImeLanguageTag
+                    )) {
                 return;
             }
 
@@ -1057,6 +1074,21 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         int start = BaseInputConnection.getComposingSpanStart(spannable);
         int end = BaseInputConnection.getComposingSpanEnd(spannable);
         return start >= 0 && end > start;
+    }
+
+    private String currentImeLanguageTag() {
+        InputMethodManager keyboard =
+                (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (keyboard == null) return "";
+
+        InputMethodSubtype subtype = keyboard.getCurrentInputMethodSubtype();
+        if (subtype == null) return "";
+
+        String languageTag = subtype.getLanguageTag();
+        if (languageTag != null && !languageTag.isEmpty()) return languageTag;
+
+        String locale = subtype.getLocale();
+        return locale == null ? "" : locale;
     }
 
     @Override public void onPageRequested(int page) {

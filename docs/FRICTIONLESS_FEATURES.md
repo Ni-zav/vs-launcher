@@ -44,7 +44,7 @@ Home
 → auto-launch
 ```
 
-A stable single **app** result still auto-launches, but the commit is intent-aware rather than a fixed 160ms reaction. The first singleton gets a 650ms quiet window, the same surviving candidate on the next edit gets 400ms, and an exact canonical/alias match gets 180ms. Every edit invalidates the previous generation. IME composing text, a leading-space escape, unfinished arithmetic/time/URL intent, explicit structured rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB), GUIDE, or sentence-like weak matching blocks app auto-launch. Keyboard Go/Enter immediately executes the first ranked row.
+A stable single **app** result still auto-launches, but the commit is intent-aware rather than a fixed 160ms reaction. The first singleton gets a 650ms quiet window, the same surviving candidate on the next edit gets 400ms, an exact canonical/alias match gets 180ms, and numeric-only singleton text gets 1800ms so long-press keyboard operators can arrive safely. Every edit invalidates the previous generation. Composition-sensitive Chinese/Japanese/Korean IME text, a leading-space escape, unfinished arithmetic/time/URL intent, explicit structured rows (DIAL/OPEN/TIMER/ALARM/CALC/WEB), GUIDE, or sentence-like weak matching blocks app auto-launch. Ordinary Latin Gboard composing spans do not block app launch. Keyboard Go/Enter immediately executes the first ranked row.
 
 Browse mode can return to search without going Home:
 
