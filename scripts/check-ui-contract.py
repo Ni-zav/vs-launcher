@@ -254,6 +254,28 @@ if "android.permission.ACCESS_HIDDEN_PROFILES" not in manifest:
 if "com.android.alarm.permission.SET_ALARM" not in manifest:
     errors.append("Timer/alarm actions require com.android.alarm.permission.SET_ALARM")
 
+# The long-press Uninstall action must reach Android's user-confirmed package
+# uninstaller, not a legacy generic delete action or an in-app removal.
+uninstall = method_body(main, "requestUninstall")
+app_actions = method_body(main, "showAppActions")
+if "android.permission.REQUEST_DELETE_PACKAGES" not in manifest:
+    errors.append("Android 9+ uninstall requests require REQUEST_DELETE_PACKAGES")
+for required in (
+    "if (app == null) return;",
+    "if (!app.isPersonal())",
+    "Intent.ACTION_UNINSTALL_PACKAGE",
+    'Uri.parse("package:" + app.component.getPackageName())',
+    "startActivity(intent)",
+    "ActivityNotFoundException | SecurityException",
+    "openAppInfo(app)",
+):
+    if required not in uninstall:
+        errors.append(f"Uninstall contract missing {required}")
+if "Intent.ACTION_DELETE" in uninstall:
+    errors.append("Uninstall must not fall back to the generic ACTION_DELETE intent")
+if 'if (app.isPersonal()) actions.add("Uninstall")' not in app_actions:
+    errors.append("Uninstall may only be offered for personal-profile apps")
+
 token_values = {
     name: int(value, 16)
     for name, value in re.findall(
