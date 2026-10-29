@@ -1638,15 +1638,27 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void requestUninstall(AppEntry app) {
-        if (app == null || !app.isPersonal()) {
+        if (app == null) return;
+        if (!app.isPersonal()) {
             openAppInfo(app);
             return;
         }
+
+        // Android 9+ requires REQUEST_DELETE_PACKAGES for this explicit uninstall action.
+        // Leave confirmation and the actual removal to the system package installer.
         Intent intent = new Intent(
-                Intent.ACTION_DELETE,
+                Intent.ACTION_UNINSTALL_PACKAGE,
                 Uri.parse("package:" + app.component.getPackageName())
         );
-        startActivity(intent);
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException | SecurityException error) {
+            // Vendor ROMs can block or omit the system uninstaller. Never report success
+            // or silently hide the app; provide the platform's App info escape hatch.
+            Toast.makeText(this, "Uninstall unavailable — opening App info", Toast.LENGTH_SHORT)
+                    .show();
+            openAppInfo(app);
+        }
     }
 
     private void showQuickAppPicker() {
