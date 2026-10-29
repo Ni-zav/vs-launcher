@@ -268,6 +268,35 @@ requestApplyInsets()
 
 A startup crash or repeated failure here is a release blocker.
 
+### Personal-app Uninstall smoke test (Android 16 / XOS)
+
+Run this only after an **in-place** update of VS Launcher. Do **not**
+uninstall `com.vslauncher` or use an important app as the test target.
+Install a disposable personal-profile test app with known package ID if needed.
+
+1. Long-press the disposable app in VS Launcher's Apps list and choose
+   **Uninstall**. Confirm Android's system uninstall dialog opens for the
+   correct package; the launcher must not remove apps silently.
+2. Tap **Cancel**. The app must remain installed and launchable.
+3. Repeat, then explicitly confirm **Uninstall**. Verify the package is
+   removed and the app disappears from the launcher after its index refresh.
+4. Check a work/private-profile app: there must be **no** personal-profile
+   Uninstall action. App info remains available.
+5. Test a non-removable/system app if safe: Android can reject removal or
+   offer to uninstall updates. The launcher must not claim success.
+6. If XOS does not expose a system uninstaller, verify the launcher reports
+   its failure and opens **App info** as a manual fallback.
+
+Optional independent verification for the disposable target only:
+
+```sh
+adb shell pm list packages | grep -F 'package:YOUR.TEST.PACKAGE'
+# The line must exist after cancel; it must be absent after confirmed uninstall.
+```
+
+The CI source contract guards the permission and system-intent wiring; this
+manual check is still required to claim Android 16 device verification.
+
 ---
 
 ## 5. Install error triage
