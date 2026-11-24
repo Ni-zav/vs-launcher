@@ -3,6 +3,7 @@ package com.vslauncher;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -14,6 +15,9 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -26,10 +30,16 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Spannable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.inputmethod.BaseInputConnection;
@@ -38,7 +48,14 @@ import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
+import android.window.BackEvent;
+import android.window.OnBackAnimationCallback;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -55,6 +72,8 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Minimal native launcher shell.
@@ -88,6 +107,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private Map<String, String> aliases = Collections.emptyMap();
     private Map<String, String> normalizedAliases = Collections.emptyMap();
     private Map<String, String> aliasInitials = Collections.emptyMap();
+    private Map<String, Integer> recentAppRanks = Collections.emptyMap();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<SearchResult> searchResults = Collections.emptyList();
     private List<AppEntry> homeApps = Collections.emptyList();
@@ -109,6 +129,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private String searchImeLanguageTag = "";
     private Runnable undoAction;
     private Runnable pendingUndoClear;
+    private boolean torchEnabled;
+    private OnBackInvokedCallback backInvokedCallback;
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "vs-config-io");
+        t.setPriority(Thread.NORM_PRIORITY - 1);
+        return t;
+    });
 
     private final Runnable clockTick = new Runnable() {
         @Override public void run() {
@@ -139,6 +166,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
         launcherPreferences = new LauncherPreferences(this);
         uiConfig = LauncherUiConfig.from(launcherPreferences);
+        recentAppRanks = launcherPreferences.recentAppRanks();
         refreshAliasCache();
 
         root = new FrameLayout(this);
@@ -170,8 +198,32 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             return insets;
         });
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            root.setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(
+                    WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP
+            ) {
+                @Override public WindowInsets onProgress(
+                        WindowInsets insets,
+                        List<WindowInsetsAnimation> runningAnimations
+                ) {
+                    android.graphics.Insets nav =
+                            insets.getInsets(WindowInsets.Type.navigationBars());
+                    android.graphics.Insets ime =
+                            insets.getInsets(WindowInsets.Type.ime());
+                    int animatedBottom = Math.max(nav.bottom, ime.bottom);
+                    if (animatedBottom != bottomInset) {
+                        bottomInset = animatedBottom;
+                        surface.setInsets(0, animatedBottom);
+                        updateSearchLayout();
+                    }
+                    return insets;
+                }
+            });
+        }
+
         setContentView(root);
         applyMinimalSystemUi();
+        registerPredictiveBack();
         root.requestApplyInsets();
 
         appRepository = new AppRepository(this);
@@ -218,13 +270,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         cancelPendingProfileReload();
         clearUndo();
         removeSearch();
+        unregisterPredictiveBack();
         unregisterPackageChanges();
         appRepository.close();
         weatherService.close();
+        ioExecutor.shutdownNow();
         super.onDestroy();
     }
 
     @Override public void onBackPressed() {
+        handleBackNavigation();
+    }
+
+    private void handleBackNavigation() {
         if (surface.getPage() == LauncherSurface.PAGE_APPS) {
             if (search != null || pendingSearchOpen != null) {
                 enterAppsBrowseMode();
@@ -236,6 +294,45 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
         if (surface.getPage() == LauncherSurface.PAGE_SETTINGS) {
             showPage(LauncherSurface.PAGE_HOME);
+        }
+    }
+
+    private void registerPredictiveBack() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            backInvokedCallback = new OnBackAnimationCallback() {
+                @Override public void onBackProgressed(BackEvent backEvent) {
+                    if (surface.getPage() == LauncherSurface.PAGE_SETTINGS
+                            || (surface.getPage() == LauncherSurface.PAGE_APPS
+                            && search == null && pendingSearchOpen == null)) {
+                        surface.setPredictiveBackProgress(backEvent.getProgress());
+                    }
+                }
+
+                @Override public void onBackCancelled() {
+                    surface.cancelPredictiveBack();
+                }
+
+                @Override public void onBackInvoked() {
+                    handleBackNavigation();
+                }
+            };
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    backInvokedCallback
+            );
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            backInvokedCallback = this::handleBackNavigation;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    backInvokedCallback
+            );
+        }
+    }
+
+    private void unregisterPredictiveBack() {
+        if (Build.VERSION.SDK_INT >= 33 && backInvokedCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backInvokedCallback);
+            backInvokedCallback = null;
         }
     }
 
@@ -355,10 +452,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             visible.add(app);
         }
         apps = Collections.unmodifiableList(visible);
-        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        filteredApps = AppRepository.filterNormalized(
+                apps,
+                normalizedQuery,
+                normalizedAliases,
+                aliasInitials,
+                recentAppRanks
+        );
         searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setApps(apps, filteredApps);
-        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty(), normalizedQuery);
         surface.setBrowseItems(buildBrowseItems());
         surface.setHiddenAppCount(hidden.size());
     }
@@ -601,9 +704,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         surface.setPage(target);
 
         if (target == LauncherSurface.PAGE_APPS) {
-            long delay = uiConfig.pageDurationMs() == 0L
-                    ? 0L
-                    : uiConfig.pageDurationMs() + 20L;
+            long delay = uiConfig.pageDurationMs() == 0L ? 0L : 40L;
             Runnable openTask = () -> {
                 pendingSearchOpen = null;
                 if (activityResumed
@@ -616,7 +717,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 }
             };
             pendingSearchOpen = openTask;
-            mainHandler.postDelayed(openTask, delay);
+            if (delay == 0L) openTask.run();
+            else mainHandler.postDelayed(openTask, delay);
         }
     }
 
@@ -640,10 +742,16 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void addSearch(boolean focus) {
         surface.setSearchActive(true);
-        filteredApps = AppRepository.filterNormalized(apps, normalizedQuery, normalizedAliases, aliasInitials);
+        filteredApps = AppRepository.filterNormalized(
+                apps,
+                normalizedQuery,
+                normalizedAliases,
+                aliasInitials,
+                recentAppRanks
+        );
         searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
         surface.setFilteredApps(filteredApps);
-        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
+        surface.setSearchResults(searchResults, !normalizedQuery.isEmpty(), normalizedQuery);
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -675,11 +783,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         apps,
                         normalizedQuery,
                         normalizedAliases,
-                        aliasInitials
+                        aliasInitials,
+                        recentAppRanks
                 );
                 searchResults = buildSearchResults(query, normalizedQuery, filteredApps);
                 surface.setFilteredApps(filteredApps);
-                surface.setSearchResults(searchResults, !normalizedQuery.isEmpty());
+                surface.setSearchResults(searchResults, !normalizedQuery.isEmpty(), normalizedQuery);
             }
 
             @Override public void afterTextChanged(Editable s) {
@@ -731,7 +840,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             }
         };
         pendingShowKeyboard = showTask;
-        mainHandler.postDelayed(showTask, 80L);
+        mainHandler.postDelayed(showTask, 30L);
     }
 
     private FrameLayout.LayoutParams searchLayoutParams() {
@@ -805,6 +914,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         TimeQueryActions.TimerSpec timer = TimeQueryActions.timer(rawQuery);
         TimeQueryActions.AlarmSpec alarm = TimeQueryActions.alarmNormalized(normalizedQuery);
         String calculation = CalculatorAction.evaluate(rawQuery);
+        UnitConversionAction.Conversion conversion = UnitConversionAction.evaluate(rawQuery);
 
         int nonAppResultCount = commands.size();
         if (dial != null) nonAppResultCount++;
@@ -812,6 +922,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (timer != null) nonAppResultCount++;
         if (alarm != null) nonAppResultCount++;
         if (calculation != null) nonAppResultCount++;
+        if (conversion != null) nonAppResultCount++;
 
         boolean web = SearchAutoLaunchPolicy.shouldOfferWebFallback(
                 normalizedQuery,
@@ -824,6 +935,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         // front-inserting/shifting the app list. Passive SYSTEM commands
         // remain after apps.
         if (web) results.add(SearchResult.web(rawQuery.trim()));
+        if (conversion != null) results.add(SearchResult.conversion(conversion));
         if (calculation != null) results.add(SearchResult.calculation(calculation));
         if (alarm != null) results.add(SearchResult.alarm(alarm));
         if (timer != null) results.add(SearchResult.timer(timer));
@@ -912,11 +1024,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             return;
         }
 
-        if (result.type == SearchResult.TYPE_CALC) {
+        if (result.type == SearchResult.TYPE_CALC || result.type == SearchResult.TYPE_CONVERSION) {
             ClipboardManager clipboard =
                     (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Calculation", result.payload));
+                clipboard.setPrimaryClip(ClipData.newPlainText("VS Launcher", result.payload));
                 showTransientStatus("Copied · " + result.payload);
             }
             return;
@@ -1012,6 +1124,9 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                     launchExternalIntent(new Intent(Settings.ACTION_SETTINGS));
                 }
                 break;
+            case SearchCommand.TORCH:
+                toggleTorch();
+                break;
             case SearchCommand.HELP:
                 showHowToUseDialog();
                 break;
@@ -1092,8 +1207,10 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             }
 
             autoLaunchCandidateKey = "";
+            surface.cancelAutoLaunchCountdown();
             launchApp(currentOnlyApp.app);
         };
+        surface.setAutoLaunchCountdown(delayMs);
         mainHandler.postDelayed(pendingSingleResultLaunch, delayMs);
     }
 
@@ -1109,6 +1226,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void cancelPendingSingleResultLaunch() {
+        if (surface != null) surface.cancelAutoLaunchCountdown();
         if (pendingSingleResultLaunch == null) return;
         mainHandler.removeCallbacks(pendingSingleResultLaunch);
         pendingSingleResultLaunch = null;
@@ -1198,46 +1316,42 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         actions.add("App info");
         if (app.isPersonal()) actions.add("Uninstall");
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle(app.pickerLabel())
-                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
-                    if (which < shortcutActionCount) {
-                        if (!appRepository.startShortcut(app, shortcutActions.get(which))) {
-                            reloadApps();
-                        }
-                        return;
-                    }
+        showActionSheet(app.pickerLabel(), actions, which -> {
+            if (which < shortcutActionCount) {
+                if (!appRepository.startShortcut(app, shortcutActions.get(which))) {
+                    reloadApps();
+                }
+                return;
+            }
 
-                    String action = actions.get(which);
-                    switch (action) {
-                        case "Pin shortcut…":
-                            showShortcutPinPicker(app, shortcutActions);
-                            break;
-                        case "Add to Home":
-                            showAddToHomeSlotPicker(app);
-                            break;
-                        case "Hide":
-                            launcherPreferences.setHidden(app.componentKey, true);
-                            refreshVisibleApps();
-                            resolveLauncherConfiguration();
-                            showUndo(app.label + " hidden", () -> {
-                                launcherPreferences.setHidden(app.componentKey, false);
-                                refreshVisibleApps();
-                                resolveLauncherConfiguration();
-                            });
-                            break;
-                        case "App info":
-                            openAppInfo(app);
-                            break;
-                        case "Uninstall":
-                            requestUninstall(app);
-                            break;
-                        default:
-                            break;
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+            String action = actions.get(which);
+            switch (action) {
+                case "Pin shortcut…":
+                    showShortcutPinPicker(app, shortcutActions);
+                    break;
+                case "Add to Home":
+                    showAddToHomeSlotPicker(app);
+                    break;
+                case "Hide":
+                    launcherPreferences.setHidden(app.componentKey, true);
+                    refreshVisibleApps();
+                    resolveLauncherConfiguration();
+                    showUndo(app.label + " hidden", () -> {
+                        launcherPreferences.setHidden(app.componentKey, false);
+                        refreshVisibleApps();
+                        resolveLauncherConfiguration();
+                    });
+                    break;
+                case "App info":
+                    openAppInfo(app);
+                    break;
+                case "Uninstall":
+                    requestUninstall(app);
+                    break;
+                default:
+                    break;
+            }
+        });
     }
 
     @Override public void onProfileHeaderTapped(int profileKind, long profileSerial) {
@@ -1379,6 +1493,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                         LauncherPreferences.BATTERY_PERCENT
                 ));
                 break;
+            case LauncherSurface.ACTION_SWIPE_DOWN:
+                launcherPreferences.setSwipeDownAction(next(
+                        uiConfig.swipeDownAction,
+                        LauncherPreferences.SWIPE_DOWN_OFF,
+                        LauncherPreferences.SWIPE_DOWN_NOTIFICATIONS,
+                        LauncherPreferences.SWIPE_DOWN_SEARCH
+                ));
+                break;
             case LauncherSurface.ACTION_ANIMATION:
                 launcherPreferences.setAnimationSpeed(next(
                         uiConfig.animationSpeed,
@@ -1417,6 +1539,60 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
     }
 
+    @Override public void onSwipeDownRequested() {
+        if (LauncherPreferences.SWIPE_DOWN_SEARCH.equals(uiConfig.swipeDownAction)) {
+            showPage(LauncherSurface.PAGE_APPS, true);
+        } else if (LauncherPreferences.SWIPE_DOWN_NOTIFICATIONS.equals(uiConfig.swipeDownAction)) {
+            expandNotificationShade();
+        }
+    }
+
+    @android.annotation.SuppressLint("WrongConstant")
+    private void expandNotificationShade() {
+        try {
+            Object statusBarService = getSystemService("statusbar");
+            if (statusBarService == null) {
+                showTransientStatus("Notifications unavailable");
+                return;
+            }
+            Class<?> statusBarManager = Class.forName("android.app.StatusBarManager");
+            statusBarManager.getMethod("expandNotificationsPanel").invoke(statusBarService);
+        } catch (Exception error) {
+            showTransientStatus("Notifications unavailable");
+        }
+    }
+
+    private void toggleTorch() {
+        CameraManager cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        if (cameraManager == null) {
+            showTransientStatus("Flashlight unavailable");
+            return;
+        }
+        try {
+            String targetCamera = null;
+            for (String id : cameraManager.getCameraIdList()) {
+                CameraCharacteristics chars = cameraManager.getCameraCharacteristics(id);
+                Boolean hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                Integer facing = chars.get(CameraCharacteristics.LENS_FACING);
+                if (Boolean.TRUE.equals(hasFlash)
+                        && (facing == null || facing == CameraCharacteristics.LENS_FACING_BACK)) {
+                    targetCamera = id;
+                    break;
+                }
+            }
+            if (targetCamera == null) {
+                showTransientStatus("Flashlight unavailable");
+                return;
+            }
+            boolean next = !torchEnabled;
+            cameraManager.setTorchMode(targetCamera, next);
+            torchEnabled = next;
+            showTransientStatus(next ? "Flashlight on" : "Flashlight off");
+        } catch (Exception error) {
+            showTransientStatus("Flashlight unavailable");
+        }
+    }
+
     @Override public void onAppsBrowseGestureStarted() {
         if (surface.getPage() != LauncherSurface.PAGE_APPS || appsBrowseMode) return;
         enterAppsBrowseMode();
@@ -1448,55 +1624,47 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (slot + 1 < maxHomeApps) actions.add("Move down");
         actions.add(shortcutSlot ? "Remove shortcut" : "Clear slot");
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Home slot " + (slot + 1))
-                .setItems(actions.toArray(new CharSequence[0]), (dialog, which) -> {
-                    String action = actions.get(which);
-                    switch (action) {
-                        case "Change app":
-                            showHomeAppPicker(slot);
-                            break;
-                        case "Rename":
-                            showRenameDialog(slot);
-                            break;
-                        case "Move up":
-                            launcherPreferences.swapHomeSlots(slot, slot - 1);
-                            resolveLauncherConfiguration();
-                            break;
-                        case "Move down":
-                            launcherPreferences.swapHomeSlots(slot, slot + 1);
-                            resolveLauncherConfiguration();
-                            break;
-                        case "Clear slot":
-                        case "Remove shortcut":
-                            clearHomeSlotWithUndo(slot, shortcutSlot);
-                            break;
-                        default:
-                            break;
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        showActionSheet("Home slot " + (slot + 1), actions, which -> {
+            String action = actions.get(which);
+            switch (action) {
+                case "Change app":
+                    showHomeAppPicker(slot);
+                    break;
+                case "Rename":
+                    showRenameDialog(slot);
+                    break;
+                case "Move up":
+                    launcherPreferences.swapHomeSlots(slot, slot - 1);
+                    resolveLauncherConfiguration();
+                    break;
+                case "Move down":
+                    launcherPreferences.swapHomeSlots(slot, slot + 1);
+                    resolveLauncherConfiguration();
+                    break;
+                case "Clear slot":
+                case "Remove shortcut":
+                    clearHomeSlotWithUndo(slot, shortcutSlot);
+                    break;
+                default:
+                    break;
+            }
+        });
     }
 
     private void showHomeAppPicker(int slot) {
         List<AppEntry> eligible = homeEligibleApps();
         if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[eligible.size()];
-        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
+        ArrayList<String> labels = new ArrayList<>(eligible.size());
+        for (AppEntry entry : eligible) labels.add(entry.pickerLabel());
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Home app " + (slot + 1))
-                .setItems(labels, (dialog, which) -> {
-                    AppEntry selected = eligible.get(which);
-                    AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
-                    launcherPreferences.setHomeSlot(slot, selected.componentKey);
-                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
-                    resolveLauncherConfiguration();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        showActionSheet("Home app " + (slot + 1), labels, which -> {
+            AppEntry selected = eligible.get(which);
+            AppEntry oldShortcutApp = shortcutAppAtSlot(slot);
+            launcherPreferences.setHomeSlot(slot, selected.componentKey);
+            if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
+            resolveLauncherConfiguration();
+        });
     }
 
     private void showRenameDialog(int slot) {
@@ -1536,51 +1704,43 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showAddToHomeSlotPicker(AppEntry app) {
-        CharSequence[] slots = new CharSequence[maxHomeApps];
+        ArrayList<String> slots = new ArrayList<>(maxHomeApps);
         for (int i = 0; i < maxHomeApps; i++) {
             AppEntry existing = i < homeApps.size() ? homeApps.get(i) : null;
             String name = existing == null ? "Empty" : existing.label;
-            slots[i] = (i + 1) + " · " + name;
+            slots.add((i + 1) + " · " + name);
         }
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Add " + app.pickerLabel())
-                .setItems(slots, (dialog, which) -> {
-                    AppEntry oldShortcutApp = shortcutAppAtSlot(which);
-                    launcherPreferences.setHomeSlot(which, app.componentKey);
-                    if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
-                    resolveLauncherConfiguration();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        showActionSheet("Add " + app.pickerLabel(), slots, which -> {
+            AppEntry oldShortcutApp = shortcutAppAtSlot(which);
+            launcherPreferences.setHomeSlot(which, app.componentKey);
+            if (oldShortcutApp != null) repinPackageShortcuts(oldShortcutApp);
+            resolveLauncherConfiguration();
+        });
     }
 
     private void showShortcutPinPicker(AppEntry app, List<ShortcutInfo> shortcuts) {
         if (shortcuts.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[shortcuts.size()];
-        for (int i = 0; i < shortcuts.size(); i++) {
-            CharSequence shortLabel = shortcuts.get(i).getShortLabel();
-            labels[i] = shortLabel == null || shortLabel.length() == 0
+        ArrayList<String> labels = new ArrayList<>(shortcuts.size());
+        for (ShortcutInfo shortcut : shortcuts) {
+            CharSequence shortLabel = shortcut.getShortLabel();
+            labels.add(shortLabel == null || shortLabel.length() == 0
                     ? "Shortcut"
-                    : shortLabel;
+                    : shortLabel.toString());
         }
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Pin shortcut")
-                .setItems(labels, (dialog, which) ->
-                        showShortcutHomeSlotPicker(app, shortcuts.get(which)))
-                .setNegativeButton("Cancel", null)
-                .show();
+        showActionSheet("Pin shortcut", labels, which ->
+                showShortcutHomeSlotPicker(app, shortcuts.get(which)));
     }
 
     private void showShortcutHomeSlotPicker(AppEntry app, ShortcutInfo shortcut) {
-        CharSequence[] slots = new CharSequence[maxHomeApps];
+        ArrayList<String> slots = new ArrayList<>(maxHomeApps);
         for (int i = 0; i < maxHomeApps; i++) {
             String label = i < homeApps.size() && homeApps.get(i) != null
                     ? surfaceHomeLabel(i)
                     : "Empty";
-            slots[i] = (i + 1) + " · " + label;
+            slots.add((i + 1) + " · " + label);
         }
 
         CharSequence shortLabel = shortcut.getShortLabel();
@@ -1588,12 +1748,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 ? app.label
                 : shortLabel.toString();
 
-        new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Pin " + label)
-                .setItems(slots, (dialog, slot) ->
-                        pinShortcutToHome(app, shortcut.getId(), label, slot))
-                .setNegativeButton("Cancel", null)
-                .show();
+        showActionSheet("Pin " + label, slots, slot ->
+                pinShortcutToHome(app, shortcut.getId(), label, slot));
     }
 
     private String surfaceHomeLabel(int slot) {
@@ -1727,28 +1883,121 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         List<AppEntry> eligible = homeEligibleApps();
         if (eligible.isEmpty()) return;
 
-        CharSequence[] labels = new CharSequence[eligible.size()];
-        for (int i = 0; i < eligible.size(); i++) labels[i] = eligible.get(i).pickerLabel();
+        ArrayList<String> labels = new ArrayList<>(eligible.size() + 1);
+        labels.add("Clear quick app");
+        for (AppEntry entry : eligible) labels.add(entry.pickerLabel());
 
-        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_VsLauncher_Dialog)
-                .setTitle("Swipe-up app")
-                .setItems(labels, (picker, which) -> {
-                    AppEntry selected = eligible.get(which);
-                    launcherPreferences.setQuickApp(selected.componentKey);
-                    resolveLauncherConfiguration();
-                })
-                .setNeutralButton("Clear", (picker, which) -> {
-                    launcherPreferences.setQuickApp(null);
-                    resolveLauncherConfiguration();
-                })
-                .setNegativeButton("Cancel", null)
-                .create();
-        dialog.show();
+        showActionSheet("Swipe-up app", labels, which -> {
+            if (which == 0) {
+                launcherPreferences.setQuickApp(null);
+            } else {
+                launcherPreferences.setQuickApp(eligible.get(which - 1).componentKey);
+            }
+            resolveLauncherConfiguration();
+        });
+    }
+
+    private interface SheetCallback {
+        void onSelected(int index);
+    }
+
+    private void showActionSheet(String title, List<String> items, SheetCallback callback) {
+        if (isFinishing() || isDestroyed() || items == null || items.isEmpty()) return;
+
+        Dialog sheet = new Dialog(this, R.style.Theme_VsLauncher);
+        sheet.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setBackgroundColor(DesignTokens.BLACK);
+        container.setPadding(0, 0, 0, bottomInset + dp(12f));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(DesignTokens.DIVIDER);
+        container.addView(divider, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Math.max(1, dp(1f))
+        ));
+
+        TextView header = new TextView(this);
+        header.setText(title == null ? "" : title.toUpperCase(Locale.ROOT));
+        header.setTextColor(DesignTokens.TEXT_TERTIARY);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.LABEL_SP);
+        header.setTypeface(DesignTokens.LABEL);
+        header.setSingleLine(true);
+        header.setEllipsize(TextUtils.TruncateAt.END);
+        header.setPadding(dp(24f), dp(20f), dp(24f), dp(12f));
+        container.addView(header);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        for (int i = 0; i < items.size(); i++) {
+            final int index = i;
+            TextView row = new TextView(this);
+            row.setText(items.get(i));
+            row.setTextColor(DesignTokens.TEXT_APP);
+            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, DesignTokens.APP_SP);
+            row.setTypeface(DesignTokens.BODY);
+            row.setSingleLine(true);
+            row.setEllipsize(TextUtils.TruncateAt.END);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(24f), dp(13f), dp(24f), dp(13f));
+            row.setOnTouchListener((v, event) -> {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    row.setTextColor(DesignTokens.FOCUS);
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    row.setTextColor(DesignTokens.TEXT_APP);
+                }
+                return false;
+            });
+            row.setOnClickListener(v -> {
+                sheet.dismiss();
+                callback.onSelected(index);
+            });
+            list.addView(row, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            ));
+        }
+
+        scroll.addView(list);
+        int maxSheetHeight = Math.round(getResources().getDisplayMetrics().heightPixels * 0.58f);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        if (items.size() > 7) scrollParams.height = maxSheetHeight;
+        container.addView(scroll, scrollParams);
+
+        sheet.setContentView(container);
+        sheet.setCanceledOnTouchOutside(true);
+        Window window = sheet.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            window.setGravity(Gravity.BOTTOM);
+            window.setDimAmount(0.65f);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        sheet.show();
     }
 
     private void launchApp(AppEntry app) {
         if (app == null) return;
-        if (!appRepository.startApp(app)) reloadApps();
+        if (appRepository.startApp(app)) {
+            launcherPreferences.recordAppLaunch(app.componentKey);
+            recentAppRanks = launcherPreferences.recentAppRanks();
+        } else {
+            reloadApps();
+        }
     }
 
     private void showUndo(String message, Runnable action) {
@@ -1756,15 +2005,21 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         undoAction = action;
         surface.setTransientMessage(message, true);
 
-        pendingUndoClear = this::clearUndo;
+        pendingUndoClear = this::fadeOutUndo;
         mainHandler.postDelayed(pendingUndoClear, 2500L);
     }
 
     private void showTransientStatus(String message) {
         clearUndo();
         surface.setTransientMessage(message, false);
-        pendingUndoClear = this::clearUndo;
+        pendingUndoClear = this::fadeOutUndo;
         mainHandler.postDelayed(pendingUndoClear, 2500L);
+    }
+
+    private void fadeOutUndo() {
+        pendingUndoClear = null;
+        undoAction = null;
+        if (surface != null) surface.fadeOutTransientMessage();
     }
 
     private void clearUndo() {
@@ -1954,41 +2209,68 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void writeConfiguration(Uri uri) {
-        try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
-            if (output == null) throw new IllegalStateException("Unable to open destination");
-            output.write(launcherPreferences.exportJson().getBytes(StandardCharsets.UTF_8));
-            output.flush();
-            Toast.makeText(this, "Configuration exported", Toast.LENGTH_SHORT).show();
+        final byte[] payload;
+        try {
+            payload = launcherPreferences.exportJson().getBytes(StandardCharsets.UTF_8);
         } catch (Exception error) {
-            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
+            showTransientStatus("Export failed");
+            return;
         }
+        ioExecutor.execute(() -> {
+            boolean ok;
+            try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                if (output == null) throw new IllegalStateException("Unable to open destination");
+                output.write(payload);
+                output.flush();
+                ok = true;
+            } catch (Exception error) {
+                ok = false;
+            }
+            final boolean success = ok;
+            mainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                showTransientStatus(success ? "Configuration exported" : "Export failed");
+            });
+        });
     }
 
     private void readConfiguration(Uri uri) {
-        try (BufferedInputStream input = new BufferedInputStream(
-                getContentResolver().openInputStream(uri)
-        ); ByteArrayOutputStream output = new ByteArrayOutputStream(4096)) {
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                if (output.size() + count > 256 * 1024) {
-                    throw new IllegalArgumentException("Configuration is too large");
+        ioExecutor.execute(() -> {
+            String json = null;
+            try (BufferedInputStream input = new BufferedInputStream(
+                    getContentResolver().openInputStream(uri)
+            ); ByteArrayOutputStream output = new ByteArrayOutputStream(4096)) {
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > 256 * 1024) {
+                        throw new IllegalArgumentException("Configuration is too large");
+                    }
+                    output.write(buffer, 0, count);
                 }
-                output.write(buffer, 0, count);
+                json = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            } catch (Exception ignored) {
             }
-
-            launcherPreferences.importJson(
-                    new String(output.toByteArray(), StandardCharsets.UTF_8)
-            );
-            applyUiConfiguration();
-            refreshAliasCache();
-            refreshVisibleApps();
-            repinConfiguredShortcuts();
-            resolveLauncherConfiguration();
-            Toast.makeText(this, "Configuration imported", Toast.LENGTH_SHORT).show();
-        } catch (Exception error) {
-            Toast.makeText(this, "Import failed", Toast.LENGTH_SHORT).show();
-        }
+            final String loadedJson = json;
+            mainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (loadedJson == null) {
+                    showTransientStatus("Import failed");
+                    return;
+                }
+                try {
+                    launcherPreferences.importJson(loadedJson);
+                    applyUiConfiguration();
+                    refreshAliasCache();
+                    refreshVisibleApps();
+                    repinConfiguredShortcuts();
+                    resolveLauncherConfiguration();
+                    showTransientStatus("Configuration imported");
+                } catch (Exception error) {
+                    showTransientStatus("Import failed");
+                }
+            });
+        });
     }
 
     private void repinConfiguredShortcuts() {

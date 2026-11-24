@@ -336,13 +336,18 @@ final class AppRepository {
             List<AppEntry> source,
             String normalized,
             Map<String, String> normalizedAliases,
-            Map<String, String> aliasInitials
+            Map<String, String> aliasInitials,
+            Map<String, Integer> recentRanks
     ) {
         if (normalized == null || normalized.isEmpty()) return source;
 
         @SuppressWarnings("unchecked")
         ArrayList<AppEntry>[] buckets = new ArrayList[8];
         for (int i = 0; i < buckets.length; i++) buckets[i] = new ArrayList<>();
+
+        boolean hasRecency = recentRanks != null && !recentRanks.isEmpty();
+        AppEntry[][] recentBuckets = hasRecency ? new AppEntry[8][24] : null;
+        int total = 0;
 
         for (AppEntry app : source) {
             String alias = normalizedAliases == null
@@ -359,15 +364,36 @@ final class AppRepository {
                     initials,
                     normalized
             );
-            if (rank >= 0) buckets[rank].add(app);
+            if (rank < 0) continue;
+            total++;
+            Integer recentSlot = hasRecency ? recentRanks.get(app.componentKey) : null;
+            if (recentSlot != null && recentSlot >= 0 && recentSlot < 24
+                    && recentBuckets[rank][recentSlot] == null) {
+                recentBuckets[rank][recentSlot] = app;
+            } else {
+                buckets[rank].add(app);
+            }
         }
 
-        int total = 0;
-        for (ArrayList<AppEntry> bucket : buckets) total += bucket.size();
-
         ArrayList<AppEntry> matches = new ArrayList<>(total);
-        for (ArrayList<AppEntry> bucket : buckets) matches.addAll(bucket);
+        for (int rank = 0; rank < buckets.length; rank++) {
+            if (recentBuckets != null) {
+                for (int slot = 0; slot < 24; slot++) {
+                    if (recentBuckets[rank][slot] != null) matches.add(recentBuckets[rank][slot]);
+                }
+            }
+            matches.addAll(buckets[rank]);
+        }
         return matches;
+    }
+
+    static List<AppEntry> filterNormalized(
+            List<AppEntry> source,
+            String normalized,
+            Map<String, String> normalizedAliases,
+            Map<String, String> aliasInitials
+    ) {
+        return filterNormalized(source, normalized, normalizedAliases, aliasInitials, null);
     }
 
     void close() {

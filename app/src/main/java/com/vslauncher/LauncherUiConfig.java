@@ -21,6 +21,7 @@ final class LauncherUiConfig {
     final String batteryMode;
     final String animationSpeed;
     final boolean haptics;
+    final String swipeDownAction;
 
     private LauncherUiConfig(
             String homePosition,
@@ -38,7 +39,8 @@ final class LauncherUiConfig {
             String weatherMode,
             String batteryMode,
             String animationSpeed,
-            boolean haptics
+            boolean haptics,
+            String swipeDownAction
     ) {
         this.homePosition = homePosition;
         this.homeAlignment = homeAlignment;
@@ -56,6 +58,7 @@ final class LauncherUiConfig {
         this.batteryMode = batteryMode;
         this.animationSpeed = animationSpeed;
         this.haptics = haptics;
+        this.swipeDownAction = swipeDownAction;
     }
 
     static LauncherUiConfig defaults() {
@@ -72,7 +75,8 @@ final class LauncherUiConfig {
                 LauncherPreferences.WEATHER_BOTH,
                 LauncherPreferences.BATTERY_BOTH,
                 LauncherPreferences.ANIMATION_FAST,
-                true
+                true,
+                LauncherPreferences.SWIPE_DOWN_OFF
         );
     }
 
@@ -93,7 +97,8 @@ final class LauncherUiConfig {
                 prefs.weatherMode(),
                 prefs.batteryMode(),
                 prefs.animationSpeed(),
-                prefs.haptics()
+                prefs.haptics(),
+                prefs.swipeDownAction()
         );
     }
 

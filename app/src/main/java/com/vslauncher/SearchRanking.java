@@ -83,4 +83,39 @@ final class SearchRanking {
         int maxSpan = Math.min(24, query.length() * 4);
         return lastMatch - firstMatch + 1 <= maxSpan;
     }
+
+    /**
+     * Finds a contiguous [start, end) highlight span in the original label matching
+     * normalizedQuery (case-insensitive substring match). Returns null if no direct
+     * contiguous span matches (e.g. alias or fuzzy match).
+     */
+    static int[] matchSpan(String label, String normalizedQuery) {
+        if (label == null || label.isEmpty()
+                || normalizedQuery == null || normalizedQuery.isEmpty()) {
+            return null;
+        }
+        int qLen = normalizedQuery.length();
+        int lLen = label.length();
+        if (qLen > lLen) return null;
+
+        for (int start = 0; start <= lLen - qLen; start++) {
+            int qi = 0;
+            int li = start;
+            while (qi < qLen && li < lLen) {
+                char lc = Character.toLowerCase(label.charAt(li));
+                char qc = normalizedQuery.charAt(qi);
+                if (lc == qc) {
+                    qi++;
+                    li++;
+                } else if (qc == ' ' && !Character.isLetterOrDigit(lc)) {
+                    qi++;
+                    li++;
+                } else {
+                    break;
+                }
+            }
+            if (qi == qLen) return new int[] { start, li };
+        }
+        return null;
+    }
 }

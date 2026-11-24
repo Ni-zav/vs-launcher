@@ -21,6 +21,7 @@ final class SearchCommand {
     static final String SOUND = "sound";
     static final String LOCATION = "location";
     static final String NOTIFICATIONS = "notifications";
+    static final String TORCH = "torch";
     static final String HELP = "help";
 
     private static final SearchCommand[] ALL = {
@@ -50,8 +51,15 @@ final class SearchCommand {
                     "Notifications",
                     "notifications",
                     "notification settings"
-            )
-,
+            ),
+            new SearchCommand(
+                    TORCH,
+                    "Flashlight",
+                    "flashlight",
+                    "torch",
+                    "flash",
+                    "light"
+            ),
             new SearchCommand(
                     HELP,
                     "How to use",

@@ -67,9 +67,17 @@ final class LauncherPreferences {
     static final String ANIMATION_FAST = "fast";
     static final String ANIMATION_NORMAL = "normal";
 
+    static final String SWIPE_DOWN_OFF = "off";
+    static final String SWIPE_DOWN_NOTIFICATIONS = "notifications";
+    static final String SWIPE_DOWN_SEARCH = "search";
+
+    private static final int MAX_RECENT_APPS = 24;
+
     private static final String PREFS = "launcher_preferences";
     private static final String HOME_MAX = "home_max";
     private static final String QUICK_APP = "quick_app";
+    private static final String SWIPE_DOWN_ACTION = "swipe_down_action";
+    private static final String RECENT_APPS = "recent_apps";
     private static final String HOME_POSITION = "home_position";
     private static final String HOME_ALIGNMENT = "home_alignment";
     private static final String HOME_DENSITY = "home_density";
@@ -188,6 +196,46 @@ final class LauncherPreferences {
         if (component == null || component.isEmpty()) edit.remove(QUICK_APP);
         else edit.putString(QUICK_APP, component);
         edit.apply();
+    }
+
+    String swipeDownAction() {
+        return oneOf(prefs.getString(SWIPE_DOWN_ACTION, SWIPE_DOWN_OFF),
+                SWIPE_DOWN_OFF, SWIPE_DOWN_NOTIFICATIONS, SWIPE_DOWN_SEARCH);
+    }
+
+    void setSwipeDownAction(String value) {
+        prefs.edit().putString(SWIPE_DOWN_ACTION,
+                oneOf(value, SWIPE_DOWN_OFF, SWIPE_DOWN_NOTIFICATIONS, SWIPE_DOWN_SEARCH)).apply();
+    }
+
+    Map<String, Integer> recentAppRanks() {
+        String raw = prefs.getString(RECENT_APPS, "");
+        if (raw == null || raw.isEmpty()) return Collections.emptyMap();
+        String[] parts = raw.split("\n");
+        HashMap<String, Integer> ranks = new HashMap<>(parts.length * 2);
+        int rank = 0;
+        for (String key : parts) {
+            if (key.isEmpty() || ranks.containsKey(key)) continue;
+            ranks.put(key, rank++);
+            if (rank >= MAX_RECENT_APPS) break;
+        }
+        return Collections.unmodifiableMap(ranks);
+    }
+
+    void recordAppLaunch(String componentKey) {
+        if (componentKey == null || componentKey.isEmpty()) return;
+        String raw = prefs.getString(RECENT_APPS, "");
+        StringBuilder updated = new StringBuilder(raw == null ? 64 : raw.length() + componentKey.length() + 2);
+        updated.append(componentKey);
+        int count = 1;
+        if (raw != null && !raw.isEmpty()) {
+            for (String existing : raw.split("\n")) {
+                if (existing.isEmpty() || existing.equals(componentKey)) continue;
+                updated.append('\n').append(existing);
+                if (++count >= MAX_RECENT_APPS) break;
+            }
+        }
+        prefs.edit().putString(RECENT_APPS, updated.toString()).apply();
     }
 
     String homePosition() {
@@ -406,6 +454,7 @@ final class LauncherPreferences {
         root.put("batteryMode", batteryMode());
         root.put("animationSpeed", animationSpeed());
         root.put("haptics", haptics());
+        root.put("swipeDownAction", swipeDownAction());
         root.put("privateSpaceVisible", privateSpaceVisible());
 
         JSONArray slots = new JSONArray();
@@ -476,6 +525,8 @@ final class LauncherPreferences {
         edit.putString(ANIMATION_SPEED, oneOf(root.optString("animationSpeed", ANIMATION_FAST),
                 ANIMATION_INSTANT, ANIMATION_FAST, ANIMATION_NORMAL));
         edit.putBoolean(HAPTICS, root.optBoolean("haptics", true));
+        edit.putString(SWIPE_DOWN_ACTION, oneOf(root.optString("swipeDownAction", SWIPE_DOWN_OFF),
+                SWIPE_DOWN_OFF, SWIPE_DOWN_NOTIFICATIONS, SWIPE_DOWN_SEARCH));
         edit.putBoolean(
                 PRIVATE_SPACE_VISIBLE,
                 root.optBoolean("privateSpaceVisible", true)

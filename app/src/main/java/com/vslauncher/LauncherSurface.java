@@ -7,6 +7,8 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Bundle;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -47,10 +49,11 @@ final class LauncherSurface extends View {
     static final int ACTION_HELP = 18;
     static final int ACTION_HOME_ALIGNMENT = 19;
     static final int ACTION_APPS_TEXT = 20;
+    static final int ACTION_SWIPE_DOWN = 21;
 
-    private static final int SETTINGS_ROW_COUNT = 22;
+    private static final int SETTINGS_ROW_COUNT = 23;
     private static final int SETTINGS_SECTION_COUNT = 6;
-    private static final int[] SETTINGS_SECTION_STARTS = {0, 5, 14, 17, 19, 21};
+    private static final int[] SETTINGS_SECTION_STARTS = {0, 5, 14, 18, 20, 22};
     private static final String[] SETTINGS_SECTION_LABELS = {
             "HOME", "STATUS", "GESTURES", "APPS", "DATA", "HELP"
     };
@@ -67,6 +70,7 @@ final class LauncherSurface extends View {
         void onHomeMaxChanged(int max);
         void onQuickAppPickerRequested();
         void onQuickLaunchRequested();
+        void onSwipeDownRequested();
         void onAppsBrowseGestureStarted();
         void onAppsSearchRequested();
         void onSettingAction(int action);
@@ -139,10 +143,17 @@ final class LauncherSurface extends View {
     private final Paint surfacePaint = fillPaint(DesignTokens.SURFACE);
     private final Paint statusFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
     private final Paint batteryFillPaint = fillPaint(DesignTokens.TEXT_SECONDARY);
+    private final Paint autoLaunchBarPaint = fillPaint(DesignTokens.TEXT_TERTIARY);
     private final Paint batteryTextPaint =
             textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
+    private final Paint transientMetaPaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.TEXT_SECONDARY, DesignTokens.BODY);
+    private final Paint transientUndoPaint =
+            textPaint(DesignTokens.META_SP, DesignTokens.FOCUS, DesignTokens.BODY);
     private final Paint batteryStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint ellipsizePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator();
     private final RectF rect = new RectF();
     private final int[] accessibilityScreenLocation = new int[2];
     private final AccessibilityManager accessibilityManager;
@@ -158,11 +169,19 @@ final class LauncherSurface extends View {
     private List<AppEntry> apps = Collections.emptyList();
     private List<AppEntry> filteredApps = Collections.emptyList();
     private List<SearchResult> searchResults = Collections.emptyList();
+    private String[] searchDisplayLabels = new String[0];
     private float[] searchMetaWidths = new float[0];
+    private int[] searchMatchStart = new int[0];
+    private int[] searchMatchEnd = new int[0];
+    private float[] searchMatchPrefixWidth = new float[0];
+    private float[] searchMatchSpanWidth = new float[0];
+    private String searchNormalizedQuery = "";
     private List<AppListItem> browseItems = Collections.emptyList();
+    private String[] browseDisplayLabels = new String[0];
     private float[] browseValueWidths = new float[0];
     private List<AppEntry> homeApps = Collections.emptyList();
     private List<String> homeLabels = Collections.emptyList();
+    private String[] homeDisplayLabels = new String[0];
     private List<String> homeShortcutIds = Collections.emptyList();
 
     private String dateText = "";
@@ -170,11 +189,14 @@ final class LauncherSurface extends View {
     private String weatherText = "Weather · tap to enable";
     private String batteryText = "—";
     private String quickAppLabel = "Not set";
+    private float quickAppLabelWidth;
     private String transientMessage = "";
     private float transientMessageWidth;
     private final String undoLabel = "UNDO";
     private float undoLabelWidth;
     private boolean transientUndoVisible;
+    private int transientAlpha = 255;
+    private ValueAnimator transientFadeAnimator;
     private LauncherUiConfig uiConfig = LauncherUiConfig.defaults();
     private float dateTextWidth;
 
@@ -193,12 +215,15 @@ final class LauncherSurface extends View {
     private float homeRowHeightPx;
     private float homeTextXPx;
     private float homeListStartPx;
-    private float settingsMaxRowTopPx;
-    private float settingsQuickRowTopPx;
     private float settingsViewportTopPx;
     private float settingsViewportBottomPx;
     private float appsViewportTopPx;
     private float appsViewportBottomPx;
+    private float alphabetRailReservePx;
+    private float labelGapPx;
+    private float overscrollMaxPx;
+    private float homePullUpMaxPx;
+    private float homeQuickHintBaselinePx;
     private int visibleHomeRowsCache;
     private float batteryTextWidth;
     private String homeCountText = "5";
@@ -243,10 +268,16 @@ final class LauncherSurface extends View {
     private final float[] settingsRowTops = new float[SETTINGS_ROW_COUNT];
     private final float[] settingsSectionBaselines = new float[SETTINGS_SECTION_COUNT];
     private final String[] settingsValues = new String[SETTINGS_ROW_COUNT];
+    private final String[] settingsDisplayValues = new String[SETTINGS_ROW_COUNT];
     private final float[] settingsValueWidths = new float[SETTINGS_ROW_COUNT];
 
     private float appScroll;
     private float settingsScroll;
+    private float appOverscrollY;
+    private float settingsOverscrollY;
+    private float homePullUpPx;
+    private boolean homePullUpArmed;
+    private float autoLaunchProgress;
     private int hiddenAppCount;
     private boolean searchActive;
     private boolean searchHasQuery;
@@ -272,6 +303,7 @@ final class LauncherSurface extends View {
     private float downY;
     private float lastY;
     private float dragOffsetX;
+    private float pendingPageVelocityX;
     private int gestureMode = GESTURE_NONE;
     private VelocityTracker velocityTracker;
 
@@ -280,13 +312,50 @@ final class LauncherSurface extends View {
     private int pressedSettingsIndex = -1;
     private boolean longPressTriggered;
 
-    private ValueAnimator pageAnimator;
     private ValueAnimator settleAnimator;
+    private ValueAnimator overscrollAnimator;
+    private ValueAnimator homePullAnimator;
+    private ValueAnimator autoLaunchAnimator;
     private int transitionFrom = PAGE_HOME;
     private int transitionTo = PAGE_HOME;
     private float transitionOldOffset;
     private float transitionOldEnd;
+    private float transitionVelocityX;
+    private long transitionLastFrameNanos;
     private boolean transitionRunning;
+
+    private final Runnable springFrameRunnable = new Runnable() {
+        @Override public void run() {
+            if (!transitionRunning) return;
+            long now = System.nanoTime();
+            float dt = transitionLastFrameNanos == 0L
+                    ? 1f / 60f
+                    : Math.min(0.033f, Math.max(0.001f, (now - transitionLastFrameNanos) / 1_000_000_000f));
+            transitionLastFrameNanos = now;
+
+            // Critically damped spring: omega = sqrt(stiffness), damping = 2 * omega.
+            float omega = LauncherPreferences.ANIMATION_NORMAL.equals(uiConfig.animationSpeed)
+                    ? 24f
+                    : 36f;
+            float displacement = transitionOldOffset - transitionOldEnd;
+            float exp = (float) Math.exp(-omega * dt);
+            float nextDisplacement = (displacement + (transitionVelocityX + omega * displacement) * dt) * exp;
+            transitionVelocityX = (transitionVelocityX - (transitionVelocityX + omega * displacement) * omega * dt) * exp;
+            transitionOldOffset = transitionOldEnd + nextDisplacement;
+
+            if (Math.abs(nextDisplacement) < 0.75f && Math.abs(transitionVelocityX) < 12f) {
+                transitionRunning = false;
+                transitionOldOffset = 0f;
+                transitionVelocityX = 0f;
+                transitionLastFrameNanos = 0L;
+                invalidate();
+                notifyAccessibilityContentChanged();
+                return;
+            }
+            invalidate();
+            postOnAnimation(this);
+        }
+    };
 
     private final Runnable longPressRunnable = new Runnable() {
         @Override public void run() {
@@ -440,15 +509,22 @@ final class LauncherSurface extends View {
     }
 
     void setSearchResults(List<SearchResult> results, boolean hasQuery) {
+        setSearchResults(results, hasQuery, searchNormalizedQuery);
+    }
+
+    void setSearchResults(List<SearchResult> results, boolean hasQuery, String normalizedQuery) {
         searchResults = results == null ? Collections.emptyList() : results;
         searchHasQuery = hasQuery;
+        searchNormalizedQuery = normalizedQuery == null ? "" : normalizedQuery;
         searchMetaWidths = new float[searchResults.size()];
         for (int i = 0; i < searchResults.size(); i++) {
             String meta = searchResults.get(i).meta;
             searchMetaWidths[i] = meta.isEmpty() ? 0f : labelPaint.measureText(meta);
         }
+        refreshSearchDisplayLabels();
         updateAppCountCache();
         appScroll = 0f;
+        appOverscrollY = 0f;
         scroller.abortAnimation();
         if (page == PAGE_APPS) invalidate();
         notifyAccessibilityContentChanged();
@@ -463,11 +539,87 @@ final class LauncherSurface extends View {
                     ? 0f
                     : metaPaint.measureText(value);
         }
+        refreshBrowseDisplayLabels();
         updateAppCountCache();
         refreshAlphabetIndex();
         appScroll = clamp(appScroll, 0f, maxAppScroll());
         if (page == PAGE_APPS) invalidate();
         notifyAccessibilityContentChanged();
+    }
+
+    private String ellipsize(String text, Paint paint, float maxWidthPx) {
+        if (text == null || text.isEmpty() || maxWidthPx <= 0f) return text == null ? "" : text;
+        if (paint.measureText(text) <= maxWidthPx) return text;
+        ellipsizePaint.set(paint);
+        return TextUtils.ellipsize(text, ellipsizePaint, maxWidthPx, TextUtils.TruncateAt.END).toString();
+    }
+
+    private void refreshHomeDisplayLabels() {
+        int count = Math.max(homeApps.size(), homeLabels.size());
+        homeDisplayLabels = new String[count];
+        float avail = Math.max(0f, rightPx - leftPx);
+        for (int i = 0; i < count; i++) {
+            AppEntry app = i < homeApps.size() ? homeApps.get(i) : null;
+            String configured = i < homeLabels.size() ? homeLabels.get(i) : "";
+            String raw = app != null
+                    ? (configured.isEmpty() ? app.label : configured)
+                    : configured;
+            homeDisplayLabels[i] = avail > 0f && !raw.isEmpty()
+                    ? ellipsize(raw, app != null ? homePaint : homeHintPaint, avail)
+                    : raw;
+        }
+    }
+
+    private void refreshSearchDisplayLabels() {
+        int count = searchResults.size();
+        searchDisplayLabels = new String[count];
+        searchMatchStart = new int[count];
+        searchMatchEnd = new int[count];
+        searchMatchPrefixWidth = new float[count];
+        searchMatchSpanWidth = new float[count];
+        float rowWidth = Math.max(0f, rightPx - leftPx);
+
+        for (int i = 0; i < count; i++) {
+            SearchResult result = searchResults.get(i);
+            float metaReserve = searchMetaWidths[i] > 0f ? searchMetaWidths[i] + labelGapPx : 0f;
+            float avail = Math.max(0f, rowWidth - metaReserve);
+            String display = avail > 0f ? ellipsize(result.label, appPaint, avail) : result.label;
+            searchDisplayLabels[i] = display;
+            searchMatchStart[i] = -1;
+            searchMatchEnd[i] = -1;
+
+            if (searchHasQuery && !searchNormalizedQuery.isEmpty() && !display.isEmpty()) {
+                int[] span = SearchRanking.matchSpan(display, searchNormalizedQuery);
+                if (span != null && span[0] >= 0 && span[1] <= display.length() && span[1] > span[0]) {
+                    searchMatchStart[i] = span[0];
+                    searchMatchEnd[i] = span[1];
+                    searchMatchPrefixWidth[i] = span[0] == 0
+                            ? 0f
+                            : appPaint.measureText(display, 0, span[0]);
+                    searchMatchSpanWidth[i] = appPrimaryPaint.measureText(display, span[0], span[1]);
+                }
+            }
+        }
+    }
+
+    private void refreshBrowseDisplayLabels() {
+        int count = browseItems.size();
+        browseDisplayLabels = new String[count];
+        float rowWidth = Math.max(0f, rightPx - leftPx - alphabetRailReservePx);
+        for (int i = 0; i < count; i++) {
+            AppListItem item = browseItems.get(i);
+            if (item.isApp()) {
+                browseDisplayLabels[i] = rowWidth > 0f
+                        ? ellipsize(item.app.label, appPaint, rowWidth)
+                        : item.app.label;
+            } else {
+                float valueReserve = browseValueWidths[i] > 0f ? browseValueWidths[i] + labelGapPx : 0f;
+                float avail = Math.max(0f, (rightPx - leftPx) - valueReserve);
+                browseDisplayLabels[i] = avail > 0f
+                        ? ellipsize(item.label, labelPaint, avail)
+                        : item.label;
+            }
+        }
     }
 
     void setFilteredApps(List<AppEntry> filtered) {
@@ -521,16 +673,112 @@ final class LauncherSurface extends View {
     }
 
     void setTransientMessage(String message, boolean showUndo) {
+        cancelTransientFadeAnimator();
         boolean previousUndoVisible = transientUndoVisible;
         transientMessage = message == null ? "" : message;
         transientMessageWidth = transientMessage.isEmpty()
                 ? 0f
                 : metaPaint.measureText(transientMessage);
         transientUndoVisible = showUndo && !transientMessage.isEmpty();
+        transientAlpha = 255;
+        transientMetaPaint.setAlpha(255);
+        transientUndoPaint.setAlpha(255);
         invalidate();
         if (previousUndoVisible != transientUndoVisible) {
             notifyAccessibilityContentChanged();
         }
+    }
+
+    void fadeOutTransientMessage() {
+        if (transientMessage.isEmpty()) return;
+        if (uiConfig.settleDurationMs() == 0L) {
+            setTransientMessage("", false);
+            return;
+        }
+        cancelTransientFadeAnimator();
+        ValueAnimator animator = ValueAnimator.ofInt(transientAlpha, 0);
+        transientFadeAnimator = animator;
+        animator.setDuration(120L);
+        animator.setInterpolator(decelerateInterpolator);
+        animator.addUpdateListener(animation -> {
+            if (transientFadeAnimator != animation) return;
+            transientAlpha = (int) animation.getAnimatedValue();
+            transientMetaPaint.setAlpha(transientAlpha);
+            transientUndoPaint.setAlpha(transientAlpha);
+            postInvalidateOnAnimation();
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (transientFadeAnimator != animation) return;
+                transientFadeAnimator = null;
+                boolean hadUndo = transientUndoVisible;
+                transientMessage = "";
+                transientMessageWidth = 0f;
+                transientUndoVisible = false;
+                transientAlpha = 255;
+                transientMetaPaint.setAlpha(255);
+                transientUndoPaint.setAlpha(255);
+                invalidate();
+                if (hadUndo) notifyAccessibilityContentChanged();
+            }
+        });
+        animator.start();
+    }
+
+    private void cancelTransientFadeAnimator() {
+        if (transientFadeAnimator != null) {
+            ValueAnimator animator = transientFadeAnimator;
+            transientFadeAnimator = null;
+            animator.cancel();
+        }
+    }
+
+    void setAutoLaunchCountdown(long durationMs) {
+        cancelAutoLaunchCountdown();
+        if (durationMs <= 0L) return;
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        autoLaunchAnimator = animator;
+        animator.setDuration(durationMs);
+        animator.addUpdateListener(animation -> {
+            if (autoLaunchAnimator != animation) return;
+            autoLaunchProgress = (float) animation.getAnimatedValue();
+            if (page == PAGE_APPS && searchActive) postInvalidateOnAnimation();
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (autoLaunchAnimator != animation) return;
+                autoLaunchAnimator = null;
+                autoLaunchProgress = 0f;
+                if (page == PAGE_APPS && searchActive) invalidate();
+            }
+        });
+        animator.start();
+    }
+
+    void cancelAutoLaunchCountdown() {
+        if (autoLaunchAnimator != null) {
+            ValueAnimator animator = autoLaunchAnimator;
+            autoLaunchAnimator = null;
+            animator.cancel();
+        }
+        if (autoLaunchProgress != 0f) {
+            autoLaunchProgress = 0f;
+            if (page == PAGE_APPS) invalidate();
+        }
+    }
+
+    void setPredictiveBackProgress(float progress) {
+        if (page == PAGE_HOME || getWidth() <= 0) return;
+        cancelPageAnimator();
+        cancelSettleAnimator(false);
+        float clamped = clamp(progress, 0f, 1f);
+        float direction = page == PAGE_APPS ? 1f : -1f;
+        dragOffsetX = direction * clamped * getWidth() * 0.45f;
+        postInvalidateOnAnimation();
+    }
+
+    void cancelPredictiveBack() {
+        if (dragOffsetX != 0f) settleDrag();
     }
 
     void setHiddenAppCount(int count) {
@@ -551,6 +799,7 @@ final class LauncherSurface extends View {
         homeShortcutIds = shortcutIds == null ? Collections.emptyList() : shortcutIds;
         maxHomeApps = Math.max(1, Math.min(8, max));
         quickAppLabel = quickLabel == null ? "Not set" : quickLabel;
+        quickAppLabelWidth = metaPaint.measureText(quickAppLabel);
         homeCountText = Integer.toString(maxHomeApps);
         homeCountWidth = titlePaint.measureText(homeCountText);
         recalculateGeometry();
@@ -572,12 +821,18 @@ final class LauncherSurface extends View {
         cancelPendingLongPress();
         cancelPageAnimator();
         cancelSettleAnimator(false);
+        cancelOverscrollAnimator();
+        cancelHomePullAnimator();
         if (!scroller.isFinished()) scroller.abortAnimation();
         recycleVelocityTracker();
         alphabetScrubbing = false;
         alphabetActiveIndex = -1;
         appsSearchPullTriggered = false;
         appsBrowseAtTopOnDown = false;
+        appOverscrollY = 0f;
+        settingsOverscrollY = 0f;
+        homePullUpPx = 0f;
+        homePullUpArmed = false;
         longPressTriggered = false;
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         resetAccessibilityFocusState();
@@ -586,57 +841,35 @@ final class LauncherSurface extends View {
         transitionTo = target;
         transitionOldOffset = dragOffsetX;
         transitionOldEnd = target > page ? -getWidth() : getWidth();
+        transitionVelocityX = pendingPageVelocityX;
+        pendingPageVelocityX = 0f;
         dragOffsetX = 0f;
         gestureMode = GESTURE_NONE;
         page = target;
         flingPage = target;
         appScroll = target == PAGE_APPS ? appScroll : 0f;
 
-        float distance = Math.abs(transitionOldEnd - transitionOldOffset);
-        float fraction = getWidth() <= 0 ? 1f : Math.min(1f, distance / getWidth());
         long baseDuration = uiConfig.pageDurationMs();
-        if (baseDuration == 0L) {
+        if (baseDuration == 0L || getWidth() <= 0) {
             transitionRunning = false;
             transitionOldOffset = 0f;
+            transitionVelocityX = 0f;
             invalidate();
             notifyAccessibilityContentChanged();
             return;
         }
-        long duration = Math.max(60L, Math.round(baseDuration * fraction));
 
         transitionRunning = true;
-        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
-        pageAnimator = animator;
-        animator.setDuration(duration);
-        animator.setInterpolator(new DecelerateInterpolator());
-        final float start = transitionOldOffset;
-        animator.addUpdateListener(animation -> {
-            if (pageAnimator != animation) return;
-            float progress = (float) animation.getAnimatedValue();
-            transitionOldOffset = start + (transitionOldEnd - start) * progress;
-            postInvalidateOnAnimation();
-        });
-        animator.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (pageAnimator != animation) return;
-                transitionRunning = false;
-                transitionOldOffset = 0f;
-                pageAnimator = null;
-                invalidate();
-                notifyAccessibilityContentChanged();
-            }
-        });
-        animator.start();
+        transitionLastFrameNanos = System.nanoTime();
+        postOnAnimation(springFrameRunnable);
     }
 
     private void cancelPageAnimator() {
-        if (pageAnimator != null) {
-            ValueAnimator animator = pageAnimator;
-            pageAnimator = null;
-            animator.cancel();
-        }
+        removeCallbacks(springFrameRunnable);
         transitionRunning = false;
         transitionOldOffset = 0f;
+        transitionVelocityX = 0f;
+        transitionLastFrameNanos = 0L;
     }
 
     private void cancelSettleAnimator(boolean resetOffset) {
@@ -646,6 +879,22 @@ final class LauncherSurface extends View {
             animator.cancel();
         }
         if (resetOffset) dragOffsetX = 0f;
+    }
+
+    private void cancelOverscrollAnimator() {
+        if (overscrollAnimator != null) {
+            ValueAnimator animator = overscrollAnimator;
+            overscrollAnimator = null;
+            animator.cancel();
+        }
+    }
+
+    private void cancelHomePullAnimator() {
+        if (homePullAnimator != null) {
+            ValueAnimator animator = homePullAnimator;
+            homePullAnimator = null;
+            animator.cancel();
+        }
     }
 
     private void clampScrollOffsets() {
@@ -675,7 +924,8 @@ final class LauncherSurface extends View {
             return;
         }
 
-        if ((gestureMode == GESTURE_HORIZONTAL || settleAnimator != null) && dragOffsetX != 0f) {
+        if ((gestureMode == GESTURE_HORIZONTAL || settleAnimator != null || dragOffsetX != 0f)
+                && dragOffsetX != 0f) {
             int neighbor = neighborForDrag(dragOffsetX);
             if (neighbor != Integer.MIN_VALUE) {
                 drawPage(canvas, page, dragOffsetX);
@@ -695,13 +945,13 @@ final class LauncherSurface extends View {
 
     private void drawTransientMessage(Canvas canvas) {
         if (transientMessage.isEmpty()) return;
-        canvas.drawText(transientMessage, leftPx, transientBaselinePx, metaPaint);
+        canvas.drawText(transientMessage, leftPx, transientBaselinePx, transientMetaPaint);
         if (transientUndoVisible) {
             canvas.drawText(
                     undoLabel,
                     transientUndoLeftPx,
                     transientBaselinePx,
-                    metaPressedPaint
+                    transientUndoPaint
             );
         }
     }
@@ -741,8 +991,6 @@ final class LauncherSurface extends View {
             homeTextXPx = leftPx;
         }
         contentTopPx = topInset + dp(28f);
-        settingsMaxRowTopPx = contentTopPx + dp(72f);
-        settingsQuickRowTopPx = contentTopPx + dp(198f);
         settingsViewportTopPx = contentTopPx + dp(48f);
         settingsViewportBottomPx = Math.max(settingsViewportTopPx, getHeight() - bottomInset - dp(20f));
         appsViewportTopPx = contentTopPx + dp(48f);
@@ -753,6 +1001,11 @@ final class LauncherSurface extends View {
         );
         alphabetTouchLeftPx = Math.max(0f, getWidth() - dp(36f));
         alphabetRailX = Math.max(0f, getWidth() - dp(13f));
+        alphabetRailReservePx = dp(24f);
+        labelGapPx = dp(12f);
+        overscrollMaxPx = dp(42f);
+        homePullUpMaxPx = dp(14f);
+        homeQuickHintBaselinePx = getHeight() - bottomInset - dp(18f);
         alphabetStepPx = Math.max(
                 1f,
                 (appsViewportBottomPx - appsViewportTopPx) / ALPHABET_LABELS.length
@@ -821,6 +1074,10 @@ final class LauncherSurface extends View {
                 homeListStartPx,
                 homeEnd
         );
+        refreshHomeDisplayLabels();
+        refreshSearchDisplayLabels();
+        refreshBrowseDisplayLabels();
+        refreshSettingsDisplayValues();
     }
 
     private void recalculateSettingsGeometry() {
@@ -917,10 +1174,11 @@ final class LauncherSurface extends View {
 
         float rowHeight = homeRowHeightPx;
         float baselineOffset = rowHeight * 0.62f;
+        float liftedStartY = startY - homePullUpPx;
         boolean emptyHintDrawn = false;
 
         for (int index = 0; index < count; index++) {
-            float rowTop = startY + index * rowHeight;
+            float rowTop = liftedStartY + index * rowHeight;
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
             boolean pressed = index == pressedHomeIndex;
 
@@ -928,15 +1186,25 @@ final class LauncherSurface extends View {
             Paint hintPaint = pressed ? homeHintPressedPaint : homeHintPaint;
 
             String configuredLabel = index < homeLabels.size() ? homeLabels.get(index) : "";
+            String displayLabel = index < homeDisplayLabels.length ? homeDisplayLabels[index] : configuredLabel;
             if (app != null) {
-                String label = configuredLabel.isEmpty() ? app.label : configuredLabel;
+                String label = displayLabel.isEmpty() ? app.label : displayLabel;
                 canvas.drawText(label, homeTextXPx, rowTop + baselineOffset, rowPaint);
             } else if (!configuredLabel.isEmpty()) {
-                canvas.drawText(configuredLabel, homeTextXPx, rowTop + baselineOffset, hintPaint);
+                canvas.drawText(displayLabel, homeTextXPx, rowTop + baselineOffset, hintPaint);
             } else if (!emptyHintDrawn) {
                 canvas.drawText("+ ADD APP", homeTextXPx, rowTop + baselineOffset, hintPaint);
                 emptyHintDrawn = true;
             }
+        }
+
+        if (homePullUpPx > 0.5f && transientMessage.isEmpty()) {
+            canvas.drawText(
+                    quickAppLabel,
+                    rightPx - quickAppLabelWidth,
+                    homeQuickHintBaselinePx,
+                    homePullUpArmed ? metaPressedPaint : labelPaint
+            );
         }
     }
 
@@ -993,7 +1261,12 @@ final class LauncherSurface extends View {
 
     private void drawApps(Canvas canvas) {
         float x = left();
-        canvas.drawText(searchActive ? "SEARCH" : "APPS", x, allAppsTitleBaselinePx, labelPaint);
+        boolean pullCue = !searchActive && appsBrowseAtTopOnDown && appOverscrollY > 0f;
+        String headerTitle = searchActive || (pullCue && appOverscrollY >= appsSearchPullThresholdPx * 0.55f)
+                ? "SEARCH"
+                : "APPS";
+        Paint headerPaint = pullCue ? labelPressedPaint : labelPaint;
+        canvas.drawText(headerTitle, x, allAppsTitleBaselinePx, headerPaint);
         canvas.drawText(appCountText, rightPx - appCountWidth, allAppsTitleBaselinePx, labelPaint);
 
         float listStart = appsViewportTopPx;
@@ -1007,7 +1280,7 @@ final class LauncherSurface extends View {
             drawSearchRows(
                     canvas,
                     x,
-                    listStart - appScroll,
+                    listStart - appScroll + appOverscrollY,
                     listStart,
                     listBottom
             );
@@ -1019,7 +1292,7 @@ final class LauncherSurface extends View {
             return;
         }
 
-        drawBrowseRows(canvas, x, listStart - appScroll, listStart, listBottom);
+        drawBrowseRows(canvas, x, listStart - appScroll + appOverscrollY, listStart, listBottom);
         drawAlphabetRail(canvas);
     }
 
@@ -1066,17 +1339,51 @@ final class LauncherSurface extends View {
         for (int i = first; i < last; i++) {
             float rowTop = startY + i * rowHeightPx;
             SearchResult result = searchResults.get(i);
+            String label = i < searchDisplayLabels.length ? searchDisplayLabels[i] : result.label;
             boolean pressed = i == pressedAppIndex;
             Paint rowPaint = pressed
                     ? appPressedPaint
                     : searchHasQuery && i == 0 ? appPrimaryPaint : appPaint;
 
-            canvas.drawText(result.label, x, rowTop + baselineOffset, rowPaint);
+            int mStart = i < searchMatchStart.length ? searchMatchStart[i] : -1;
+            int mEnd = i < searchMatchEnd.length ? searchMatchEnd[i] : -1;
+            float baseline = rowTop + baselineOffset;
+            if (!pressed && searchHasQuery && mStart >= 0 && mEnd > mStart && mEnd <= label.length()) {
+                Paint matchPaint = i == 0 ? appPressedPaint : appPrimaryPaint;
+                if (mStart > 0) {
+                    canvas.drawText(label, 0, mStart, x, baseline, appPaint);
+                }
+                canvas.drawText(label, mStart, mEnd, x + searchMatchPrefixWidth[i], baseline, matchPaint);
+                if (mEnd < label.length()) {
+                    canvas.drawText(
+                            label,
+                            mEnd,
+                            label.length(),
+                            x + searchMatchPrefixWidth[i] + searchMatchSpanWidth[i],
+                            baseline,
+                            appPaint
+                    );
+                }
+            } else {
+                canvas.drawText(label, x, baseline, rowPaint);
+            }
+
+            if (i == 0 && autoLaunchProgress > 0f) {
+                float barBottom = rowTop + rowHeightPx - dividerThicknessPx;
+                canvas.drawRect(
+                        x,
+                        barBottom - dividerThicknessPx,
+                        x + (right - x) * autoLaunchProgress,
+                        barBottom,
+                        autoLaunchBarPaint
+                );
+            }
+
             if (!result.meta.isEmpty()) {
                 canvas.drawText(
                         result.meta,
                         right - searchMetaWidths[i],
-                        rowTop + baselineOffset,
+                        baseline,
                         pressed ? metaPressedPaint : labelPaint
                 );
             }
@@ -1153,11 +1460,13 @@ final class LauncherSurface extends View {
                 } else {
                     rowPaint = appPaint;
                 }
-                canvas.drawText(item.app.label, x, rowTop + baselineOffset, rowPaint);
+                String label = i < browseDisplayLabels.length ? browseDisplayLabels[i] : item.app.label;
+                canvas.drawText(label, x, rowTop + baselineOffset, rowPaint);
             } else {
                 float profileBaseline = rowTop + baselineOffset + profileHeaderLeadPx;
+                String label = i < browseDisplayLabels.length ? browseDisplayLabels[i] : item.label;
                 canvas.drawText(
-                        item.label,
+                        label,
                         x,
                         profileBaseline,
                         pressed ? labelPressedPaint : labelPaint
@@ -1186,7 +1495,7 @@ final class LauncherSurface extends View {
         canvas.clipRect(x, settingsViewportTopPx, right, settingsViewportBottomPx);
 
         for (int section = 0; section < SETTINGS_SECTION_COUNT; section++) {
-            float baseline = settingsSectionBaselines[section] - settingsScroll;
+            float baseline = settingsSectionBaselines[section] - settingsScroll + settingsOverscrollY;
             if (baseline >= settingsViewportTopPx - settingsSectionHeaderHeightPx
                     && baseline <= settingsViewportBottomPx) {
                 canvas.drawText(SETTINGS_SECTION_LABELS[section], x, baseline, labelPaint);
@@ -1194,7 +1503,7 @@ final class LauncherSurface extends View {
         }
 
         for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
-            float y = settingsRowTops[index] - settingsScroll;
+            float y = settingsRowTops[index] - settingsScroll + settingsOverscrollY;
             if (y + rowHeightPx < settingsViewportTopPx || y > settingsViewportBottomPx) continue;
             drawSettingsRow(canvas, index, y, x, right);
         }
@@ -1211,7 +1520,7 @@ final class LauncherSurface extends View {
     ) {
         float baseline = y + rowHeightPx * 0.58f;
         String label = settingsLabel(index);
-        String value = settingsValues[index];
+        String value = settingsDisplayValues[index];
         boolean pressed = index == pressedSettingsIndex;
 
         canvas.drawText(label, x, baseline, pressed ? settingsPressedPaint : settingsPaint);
@@ -1243,13 +1552,14 @@ final class LauncherSurface extends View {
             case 12: return "Weather detail";
             case 13: return "Battery detail";
             case 14: return "Swipe up";
-            case 15: return "Animation";
-            case 16: return "Haptics";
-            case 17: return "Apps text";
-            case 18: return "Hidden apps";
-            case 19: return "Export config";
-            case 20: return "Import config";
-            case 21: return "How to use";
+            case 15: return "Swipe down";
+            case 16: return "Animation";
+            case 17: return "Haptics";
+            case 18: return "Apps text";
+            case 19: return "Hidden apps";
+            case 20: return "Export config";
+            case 21: return "Import config";
+            case 22: return "How to use";
             default: return "";
         }
     }
@@ -1285,15 +1595,28 @@ final class LauncherSurface extends View {
                     break;
                 case 13: value = titleCase(uiConfig.batteryMode); break;
                 case 14: value = quickAppLabel; break;
-                case 15: value = titleCase(uiConfig.animationSpeed); break;
-                case 16: value = onOff(uiConfig.haptics); break;
-                case 17: value = titleCase(uiConfig.appsTextSize); break;
-                case 18: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
-                case 21: value = "Guide"; break;
+                case 15: value = titleCase(uiConfig.swipeDownAction); break;
+                case 16: value = titleCase(uiConfig.animationSpeed); break;
+                case 17: value = onOff(uiConfig.haptics); break;
+                case 18: value = titleCase(uiConfig.appsTextSize); break;
+                case 19: value = hiddenAppCount == 0 ? "None" : Integer.toString(hiddenAppCount); break;
+                case 22: value = "Guide"; break;
                 default: value = ""; break;
             }
             settingsValues[index] = value;
-            settingsValueWidths[index] = value.isEmpty() ? 0f : metaPaint.measureText(value);
+        }
+        refreshSettingsDisplayValues();
+    }
+
+    private void refreshSettingsDisplayValues() {
+        float maxValWidth = Math.max(0f, (rightPx - leftPx) * 0.48f);
+        for (int index = 0; index < SETTINGS_ROW_COUNT; index++) {
+            String value = settingsValues[index] == null ? "" : settingsValues[index];
+            String display = maxValWidth > 0f && !value.isEmpty()
+                    ? ellipsize(value, metaPaint, maxValWidth)
+                    : value;
+            settingsDisplayValues[index] = display;
+            settingsValueWidths[index] = display.isEmpty() ? 0f : metaPaint.measureText(display);
         }
     }
 
@@ -1318,7 +1641,13 @@ final class LauncherSurface extends View {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 cancelSettleAnimator(true);
+                cancelOverscrollAnimator();
+                cancelHomePullAnimator();
                 if (!scroller.isFinished()) scroller.abortAnimation();
+                appOverscrollY = 0f;
+                settingsOverscrollY = 0f;
+                homePullUpPx = 0f;
+                homePullUpArmed = false;
 
                 recycleVelocityTracker();
                 velocityTracker = VelocityTracker.obtain();
@@ -1418,23 +1747,62 @@ final class LauncherSurface extends View {
                     }
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
+                    float dy = moveY - lastY;
+                    float max = maxAppScroll();
+                    float candidate = appScroll - dy;
+                    if (candidate < 0f) {
+                        appScroll = 0f;
+                        appOverscrollY = clamp(appOverscrollY + dy * 0.35f, 0f, overscrollMaxPx);
+                    } else if (candidate > max) {
+                        appScroll = max;
+                        appOverscrollY = clamp(appOverscrollY + dy * 0.35f, -overscrollMaxPx, 0f);
+                    } else {
+                        appScroll = candidate;
+                        appOverscrollY = 0f;
+                    }
+                    lastY = moveY;
+
                     if (appsBrowseAtTopOnDown
                             && !searchActive
                             && appScroll <= 0f
                             && totalDy >= appsSearchPullThresholdPx) {
                         appsSearchPullTriggered = true;
+                        appOverscrollY = 0f;
+                        if (uiConfig.haptics) {
+                            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        }
                         host.onAppsSearchRequested();
                         return true;
                     }
-
-                    float dy = moveY - lastY;
-                    appScroll = clamp(appScroll - dy, 0f, maxAppScroll());
-                    lastY = moveY;
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_SETTINGS) {
                     float dy = moveY - lastY;
-                    settingsScroll = clamp(settingsScroll - dy, 0f, maxSettingsScroll());
+                    float max = maxSettingsScroll();
+                    float candidate = settingsScroll - dy;
+                    if (candidate < 0f) {
+                        settingsScroll = 0f;
+                        settingsOverscrollY = clamp(settingsOverscrollY + dy * 0.35f, 0f, overscrollMaxPx);
+                    } else if (candidate > max) {
+                        settingsScroll = max;
+                        settingsOverscrollY = clamp(settingsOverscrollY + dy * 0.35f, -overscrollMaxPx, 0f);
+                    } else {
+                        settingsScroll = candidate;
+                        settingsOverscrollY = 0f;
+                    }
                     lastY = moveY;
+                    postInvalidateOnAnimation();
+                } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_HOME) {
+                    if (totalDy < 0f) {
+                        homePullUpPx = clamp(-totalDy * 0.22f, 0f, homePullUpMaxPx);
+                        boolean armed = -totalDy >= gestureThresholdPx;
+                        if (armed && !homePullUpArmed && uiConfig.haptics) {
+                            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        }
+                        homePullUpArmed = armed;
+                    } else {
+                        homePullUpPx = 0f;
+                        homePullUpArmed = false;
+                    }
                     postInvalidateOnAnimation();
                 }
                 return true;
@@ -1478,8 +1846,12 @@ final class LauncherSurface extends View {
                 if (longPressTriggered) {
                     // The long press already opened its picker; never also launch the app.
                     settleDrag();
+                    settleOverscroll();
+                    settleHomePullUp();
                 } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     settleDrag();
+                    settleOverscroll();
+                    settleHomePullUp();
                 } else if (gestureMode == GESTURE_HORIZONTAL) {
                     finishHorizontalGesture(velocityX);
                 } else if (gestureMode == GESTURE_VERTICAL) {
@@ -1514,8 +1886,10 @@ final class LauncherSurface extends View {
                 && Math.signum(velocityX) == Math.signum(dragOffsetX);
 
         if (target != Integer.MIN_VALUE && (distanceCommit || velocityCommit)) {
+            pendingPageVelocityX = velocityX;
             host.onPageRequested(target);
         } else {
+            pendingPageVelocityX = 0f;
             settleDrag();
         }
     }
@@ -1535,7 +1909,7 @@ final class LauncherSurface extends View {
         ValueAnimator animator = ValueAnimator.ofFloat(start, 0f);
         settleAnimator = animator;
         animator.setDuration(duration);
-        animator.setInterpolator(new DecelerateInterpolator());
+        animator.setInterpolator(decelerateInterpolator);
         animator.addUpdateListener(animation -> {
             if (settleAnimator != animation) return;
             dragOffsetX = (float) animation.getAnimatedValue();
@@ -1552,8 +1926,85 @@ final class LauncherSurface extends View {
         animator.start();
     }
 
+    private void settleOverscroll() {
+        boolean hasApp = appOverscrollY != 0f;
+        boolean hasSettings = settingsOverscrollY != 0f;
+        if (!hasApp && !hasSettings) return;
+        cancelOverscrollAnimator();
+
+        long duration = uiConfig.settleDurationMs();
+        if (duration == 0L) {
+            appOverscrollY = 0f;
+            settingsOverscrollY = 0f;
+            invalidate();
+            return;
+        }
+
+        final float startApp = appOverscrollY;
+        final float startSettings = settingsOverscrollY;
+        ValueAnimator animator = ValueAnimator.ofFloat(1f, 0f);
+        overscrollAnimator = animator;
+        animator.setDuration(duration);
+        animator.setInterpolator(decelerateInterpolator);
+        animator.addUpdateListener(animation -> {
+            if (overscrollAnimator != animation) return;
+            float factor = (float) animation.getAnimatedValue();
+            appOverscrollY = startApp * factor;
+            settingsOverscrollY = startSettings * factor;
+            postInvalidateOnAnimation();
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (overscrollAnimator != animation) return;
+                overscrollAnimator = null;
+                appOverscrollY = 0f;
+                settingsOverscrollY = 0f;
+                invalidate();
+            }
+        });
+        animator.start();
+    }
+
+    private void settleHomePullUp() {
+        homePullUpArmed = false;
+        if (homePullUpPx == 0f) return;
+        cancelHomePullAnimator();
+
+        long duration = uiConfig.settleDurationMs();
+        if (duration == 0L) {
+            homePullUpPx = 0f;
+            invalidate();
+            return;
+        }
+
+        ValueAnimator animator = ValueAnimator.ofFloat(homePullUpPx, 0f);
+        homePullAnimator = animator;
+        animator.setDuration(duration);
+        animator.setInterpolator(decelerateInterpolator);
+        animator.addUpdateListener(animation -> {
+            if (homePullAnimator != animation) return;
+            homePullUpPx = (float) animation.getAnimatedValue();
+            postInvalidateOnAnimation();
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (homePullAnimator != animation) return;
+                homePullAnimator = null;
+                homePullUpPx = 0f;
+                invalidate();
+            }
+        });
+        animator.start();
+    }
+
     private void finishVerticalGesture(float upX, float upY, float velocityY) {
         if (page == PAGE_APPS || page == PAGE_SETTINGS) {
+            boolean overscrolled = (page == PAGE_APPS && appOverscrollY != 0f)
+                    || (page == PAGE_SETTINGS && settingsOverscrollY != 0f);
+            if (overscrolled) {
+                settleOverscroll();
+                return;
+            }
             if (Math.abs(velocityY) >= minFlingVelocity) {
                 flingPage = page;
                 int current = page == PAGE_APPS
@@ -1579,11 +2030,14 @@ final class LauncherSurface extends View {
 
         if (page != PAGE_HOME) return;
 
+        settleHomePullUp();
         float dy = upY - downY;
         if (Math.abs(dy) <= Math.abs(upX - downX)) return;
 
         if (dy < -gestureThresholdPx) {
             host.onQuickLaunchRequested();
+        } else if (dy > gestureThresholdPx) {
+            host.onSwipeDownRequested();
         }
     }
 
@@ -1592,9 +2046,13 @@ final class LauncherSurface extends View {
         int requested = (int) ((y - appsViewportTopPx) / alphabetStepPx);
         requested = Math.max(0, Math.min(ALPHABET_LABELS.length - 1, requested));
 
+        int previous = alphabetActiveIndex;
         int actual = LauncherLayout.nearestAvailableBucket(alphabetFirstIndex, requested);
         alphabetActiveIndex = actual >= 0 ? actual : requested;
         if (actual >= 0) {
+            if (actual != previous && uiConfig.haptics) {
+                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
             int row = alphabetFirstIndex[actual];
             appScroll = clamp(row * rowHeightPx, 0f, maxAppScroll());
         }
@@ -1766,13 +2224,14 @@ final class LauncherSurface extends View {
             case 12: host.onSettingAction(ACTION_WEATHER_MODE); break;
             case 13: host.onSettingAction(ACTION_BATTERY_MODE); break;
             case 14: host.onQuickAppPickerRequested(); break;
-            case 15: host.onSettingAction(ACTION_ANIMATION); break;
-            case 16: host.onSettingAction(ACTION_HAPTICS); break;
-            case 17: host.onSettingAction(ACTION_APPS_TEXT); break;
-            case 18: host.onSettingAction(ACTION_HIDDEN_APPS); break;
-            case 19: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
-            case 20: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
-            case 21: host.onSettingAction(ACTION_HELP); break;
+            case 15: host.onSettingAction(ACTION_SWIPE_DOWN); break;
+            case 16: host.onSettingAction(ACTION_ANIMATION); break;
+            case 17: host.onSettingAction(ACTION_HAPTICS); break;
+            case 18: host.onSettingAction(ACTION_APPS_TEXT); break;
+            case 19: host.onSettingAction(ACTION_HIDDEN_APPS); break;
+            case 20: host.onSettingAction(ACTION_EXPORT_CONFIG); break;
+            case 21: host.onSettingAction(ACTION_IMPORT_CONFIG); break;
+            case 22: host.onSettingAction(ACTION_HELP); break;
             default: break;
         }
     }
@@ -1842,14 +2301,6 @@ final class LauncherSurface extends View {
 
     private int visibleHomeRows() {
         return visibleHomeRowsCache;
-    }
-
-    private float settingsMaxRowTop() {
-        return settingsMaxRowTopPx;
-    }
-
-    private float settingsQuickRowTop() {
-        return settingsQuickRowTopPx;
     }
 
     private float maxAppScroll() {
@@ -2567,12 +3018,20 @@ final class LauncherSurface extends View {
         cancelPendingLongPress();
         cancelPageAnimator();
         cancelSettleAnimator(true);
+        cancelOverscrollAnimator();
+        cancelHomePullAnimator();
+        cancelAutoLaunchCountdown();
+        cancelTransientFadeAnimator();
         if (!scroller.isFinished()) scroller.abortAnimation();
         recycleVelocityTracker();
         alphabetScrubbing = false;
         alphabetActiveIndex = -1;
         appsSearchPullTriggered = false;
         appsBrowseAtTopOnDown = false;
+        appOverscrollY = 0f;
+        settingsOverscrollY = 0f;
+        homePullUpPx = 0f;
+        homePullUpArmed = false;
         longPressTriggered = false;
         gestureMode = GESTURE_NONE;
         activePointerId = MotionEvent.INVALID_POINTER_ID;

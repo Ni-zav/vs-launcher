@@ -9,6 +9,7 @@ final class SearchResult {
     static final int TYPE_ALARM = 5;
     static final int TYPE_CALC = 6;
     static final int TYPE_WEB = 7;
+    static final int TYPE_CONVERSION = 8;
 
     final int type;
     final AppEntry app;
@@ -83,6 +84,17 @@ final class SearchResult {
         return new SearchResult(TYPE_CALC, null, "calc", result, "CALC", result);
     }
 
+    static SearchResult conversion(UnitConversionAction.Conversion conversion) {
+        return new SearchResult(
+                TYPE_CONVERSION,
+                null,
+                "convert",
+                conversion.display,
+                "CONVERT",
+                conversion.copyValue
+        );
+    }
+
     static SearchResult web(String query) {
         return new SearchResult(TYPE_WEB, null, "web", "Search web", "WEB", query);
     }
@@ -99,6 +111,7 @@ final class SearchResult {
                 || type == TYPE_TIMER
                 || type == TYPE_ALARM
                 || type == TYPE_CALC
+                || type == TYPE_CONVERSION
                 || type == TYPE_WEB;
     }
 }
