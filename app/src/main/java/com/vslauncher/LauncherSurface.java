@@ -265,6 +265,9 @@ final class LauncherSurface extends View {
     private float transientTapBottomPx;
     private float transientUndoLeftPx;
     private boolean appsSearchPullTriggered;
+    private boolean appsBrowseAtTopOnDown;
+    private int activePointerId = MotionEvent.INVALID_POINTER_ID;
+    private int flingPage = PAGE_HOME;
     private float downX;
     private float downY;
     private float lastY;
@@ -367,7 +370,7 @@ final class LauncherSurface extends View {
         topInset = top;
         bottomInset = bottom;
         recalculateGeometry();
-        appScroll = clamp(appScroll, 0f, maxAppScroll());
+        clampScrollOffsets();
         invalidate();
     }
 
@@ -396,6 +399,7 @@ final class LauncherSurface extends View {
         homeHintPressedPaint.setTextAlign(homeAlign);
 
         recalculateGeometry();
+        clampScrollOffsets();
         refreshSettingsValueCache();
         invalidate();
     }
@@ -503,6 +507,11 @@ final class LauncherSurface extends View {
     void setSearchActive(boolean active) {
         if (searchActive == active) return;
         searchActive = active;
+        if (active) {
+            alphabetScrubbing = false;
+            alphabetActiveIndex = -1;
+        }
+        resetAccessibilityFocusState();
         recalculateGeometry();
         updateAppCountCache();
         refreshAlphabetIndex();
@@ -512,12 +521,16 @@ final class LauncherSurface extends View {
     }
 
     void setTransientMessage(String message, boolean showUndo) {
+        boolean previousUndoVisible = transientUndoVisible;
         transientMessage = message == null ? "" : message;
         transientMessageWidth = transientMessage.isEmpty()
                 ? 0f
                 : metaPaint.measureText(transientMessage);
         transientUndoVisible = showUndo && !transientMessage.isEmpty();
         invalidate();
+        if (previousUndoVisible != transientUndoVisible) {
+            notifyAccessibilityContentChanged();
+        }
     }
 
     void setHiddenAppCount(int count) {
@@ -558,10 +571,16 @@ final class LauncherSurface extends View {
 
         cancelPendingLongPress();
         cancelPageAnimator();
-        if (settleAnimator != null) {
-            settleAnimator.cancel();
-            settleAnimator = null;
-        }
+        cancelSettleAnimator(false);
+        if (!scroller.isFinished()) scroller.abortAnimation();
+        recycleVelocityTracker();
+        alphabetScrubbing = false;
+        alphabetActiveIndex = -1;
+        appsSearchPullTriggered = false;
+        appsBrowseAtTopOnDown = false;
+        longPressTriggered = false;
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
+        resetAccessibilityFocusState();
 
         transitionFrom = page;
         transitionTo = target;
@@ -570,6 +589,7 @@ final class LauncherSurface extends View {
         dragOffsetX = 0f;
         gestureMode = GESTURE_NONE;
         page = target;
+        flingPage = target;
         appScroll = target == PAGE_APPS ? appScroll : 0f;
 
         float distance = Math.abs(transitionOldEnd - transitionOldOffset);
@@ -585,17 +605,20 @@ final class LauncherSurface extends View {
         long duration = Math.max(60L, Math.round(baseDuration * fraction));
 
         transitionRunning = true;
-        pageAnimator = ValueAnimator.ofFloat(0f, 1f);
-        pageAnimator.setDuration(duration);
-        pageAnimator.setInterpolator(new DecelerateInterpolator());
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        pageAnimator = animator;
+        animator.setDuration(duration);
+        animator.setInterpolator(new DecelerateInterpolator());
         final float start = transitionOldOffset;
-        pageAnimator.addUpdateListener(animation -> {
+        animator.addUpdateListener(animation -> {
+            if (pageAnimator != animation) return;
             float progress = (float) animation.getAnimatedValue();
             transitionOldOffset = start + (transitionOldEnd - start) * progress;
             postInvalidateOnAnimation();
         });
-        pageAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (pageAnimator != animation) return;
                 transitionRunning = false;
                 transitionOldOffset = 0f;
                 pageAnimator = null;
@@ -603,16 +626,36 @@ final class LauncherSurface extends View {
                 notifyAccessibilityContentChanged();
             }
         });
-        pageAnimator.start();
+        animator.start();
     }
 
     private void cancelPageAnimator() {
         if (pageAnimator != null) {
-            pageAnimator.cancel();
+            ValueAnimator animator = pageAnimator;
             pageAnimator = null;
+            animator.cancel();
         }
         transitionRunning = false;
         transitionOldOffset = 0f;
+    }
+
+    private void cancelSettleAnimator(boolean resetOffset) {
+        if (settleAnimator != null) {
+            ValueAnimator animator = settleAnimator;
+            settleAnimator = null;
+            animator.cancel();
+        }
+        if (resetOffset) dragOffsetX = 0f;
+    }
+
+    private void clampScrollOffsets() {
+        appScroll = clamp(appScroll, 0f, maxAppScroll());
+        settingsScroll = clamp(settingsScroll, 0f, maxSettingsScroll());
+    }
+
+    private void resetAccessibilityFocusState() {
+        accessibilityHoverId = A11Y_NONE;
+        accessibilityFocusedId = A11Y_NONE;
     }
 
     private void invalidateHome() {
@@ -632,7 +675,7 @@ final class LauncherSurface extends View {
             return;
         }
 
-        if (gestureMode == GESTURE_HORIZONTAL && dragOffsetX != 0f) {
+        if ((gestureMode == GESTURE_HORIZONTAL || settleAnimator != null) && dragOffsetX != 0f) {
             int neighbor = neighborForDrag(dragOffsetX);
             if (neighbor != Integer.MIN_VALUE) {
                 drawPage(canvas, page, dragOffsetX);
@@ -679,7 +722,7 @@ final class LauncherSurface extends View {
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         recalculateGeometry();
-        appScroll = clamp(appScroll, 0f, maxAppScroll());
+        clampScrollOffsets();
     }
 
     private void recalculateGeometry() {
@@ -1274,16 +1317,14 @@ final class LauncherSurface extends View {
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                if (settleAnimator != null) {
-                    settleAnimator.cancel();
-                    settleAnimator = null;
-                }
+                cancelSettleAnimator(true);
                 if (!scroller.isFinished()) scroller.abortAnimation();
 
                 recycleVelocityTracker();
                 velocityTracker = VelocityTracker.obtain();
                 velocityTracker.addMovement(event);
 
+                activePointerId = event.getPointerId(0);
                 downX = event.getX();
                 downY = event.getY();
                 lastY = downY;
@@ -1291,6 +1332,9 @@ final class LauncherSurface extends View {
                 gestureMode = GESTURE_NONE;
                 longPressTriggered = false;
                 appsSearchPullTriggered = false;
+                alphabetScrubbing = false;
+                alphabetActiveIndex = -1;
+                appsBrowseAtTopOnDown = page == PAGE_APPS && !searchActive && appScroll <= 0f;
 
                 if (page == PAGE_APPS
                         && !searchActive
@@ -1321,16 +1365,38 @@ final class LauncherSurface extends View {
                 }
                 return true;
 
+            case MotionEvent.ACTION_POINTER_UP:
+                int actionIndex = event.getActionIndex();
+                if (event.getPointerId(actionIndex) == activePointerId) {
+                    int nextIndex = actionIndex == 0 ? 1 : 0;
+                    if (nextIndex < event.getPointerCount()) {
+                        float prevX = event.getX(actionIndex);
+                        float prevY = event.getY(actionIndex);
+                        float nextX = event.getX(nextIndex);
+                        float nextY = event.getY(nextIndex);
+                        activePointerId = event.getPointerId(nextIndex);
+                        downX += nextX - prevX;
+                        downY += nextY - prevY;
+                        lastY = nextY;
+                    }
+                }
+                return true;
+
             case MotionEvent.ACTION_MOVE:
-                if (appsSearchPullTriggered) return true;
+                if (longPressTriggered || appsSearchPullTriggered) return true;
+                int moveIndex = event.findPointerIndex(activePointerId);
+                if (moveIndex < 0) return true;
+                float moveX = event.getX(moveIndex);
+                float moveY = event.getY(moveIndex);
+
                 if (alphabetScrubbing) {
-                    updateAlphabetScrub(event.getY());
+                    updateAlphabetScrub(moveY);
                     return true;
                 }
                 if (velocityTracker != null) velocityTracker.addMovement(event);
 
-                float totalDx = event.getX() - downX;
-                float totalDy = event.getY() - downY;
+                float totalDx = moveX - downX;
+                float totalDy = moveY - downY;
                 if (Math.max(Math.abs(totalDx), Math.abs(totalDy)) > touchSlop) {
                     cancelPendingLongPress();
                 }
@@ -1352,7 +1418,8 @@ final class LauncherSurface extends View {
                     }
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_APPS) {
-                    if (!searchActive
+                    if (appsBrowseAtTopOnDown
+                            && !searchActive
                             && appScroll <= 0f
                             && totalDy >= appsSearchPullThresholdPx) {
                         appsSearchPullTriggered = true;
@@ -1360,22 +1427,30 @@ final class LauncherSurface extends View {
                         return true;
                     }
 
-                    float dy = event.getY() - lastY;
+                    float dy = moveY - lastY;
                     appScroll = clamp(appScroll - dy, 0f, maxAppScroll());
-                    lastY = event.getY();
+                    lastY = moveY;
                     postInvalidateOnAnimation();
                 } else if (gestureMode == GESTURE_VERTICAL && page == PAGE_SETTINGS) {
-                    float dy = event.getY() - lastY;
+                    float dy = moveY - lastY;
                     settingsScroll = clamp(settingsScroll - dy, 0f, maxSettingsScroll());
-                    lastY = event.getY();
+                    lastY = moveY;
                     postInvalidateOnAnimation();
                 }
                 return true;
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                int upIndex = event.findPointerIndex(activePointerId);
+                float upX = upIndex >= 0 ? event.getX(upIndex) : event.getX();
+                float upY = upIndex >= 0 ? event.getY(upIndex) : event.getY();
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                appsBrowseAtTopOnDown = false;
+
                 if (appsSearchPullTriggered) {
                     appsSearchPullTriggered = false;
+                    longPressTriggered = false;
+                    cancelPendingLongPress();
                     recycleVelocityTracker();
                     gestureMode = GESTURE_NONE;
                     return true;
@@ -1383,6 +1458,8 @@ final class LauncherSurface extends View {
                 if (alphabetScrubbing) {
                     alphabetScrubbing = false;
                     alphabetActiveIndex = -1;
+                    longPressTriggered = false;
+                    gestureMode = GESTURE_NONE;
                     invalidate();
                     recycleVelocityTracker();
                     return true;
@@ -1400,19 +1477,21 @@ final class LauncherSurface extends View {
 
                 if (longPressTriggered) {
                     // The long press already opened its picker; never also launch the app.
+                    settleDrag();
                 } else if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     settleDrag();
                 } else if (gestureMode == GESTURE_HORIZONTAL) {
                     finishHorizontalGesture(velocityX);
                 } else if (gestureMode == GESTURE_VERTICAL) {
-                    finishVerticalGesture(event, velocityY);
+                    finishVerticalGesture(upX, upY, velocityY);
                 } else {
                     performClick();
-                    handleTap(event.getX(), event.getY());
+                    handleTap(upX, upY);
                 }
 
                 recycleVelocityTracker();
                 gestureMode = GESTURE_NONE;
+                longPressTriggered = false;
                 pressedHomeIndex = -1;
                 pressedAppIndex = -1;
                 pressedSettingsIndex = -1;
@@ -1443,7 +1522,7 @@ final class LauncherSurface extends View {
 
     private void settleDrag() {
         if (dragOffsetX == 0f) return;
-        if (settleAnimator != null) settleAnimator.cancel();
+        cancelSettleAnimator(false);
 
         long duration = uiConfig.settleDurationMs();
         if (duration == 0L) {
@@ -1453,26 +1532,30 @@ final class LauncherSurface extends View {
         }
 
         float start = dragOffsetX;
-        settleAnimator = ValueAnimator.ofFloat(start, 0f);
-        settleAnimator.setDuration(duration);
-        settleAnimator.setInterpolator(new DecelerateInterpolator());
-        settleAnimator.addUpdateListener(animation -> {
+        ValueAnimator animator = ValueAnimator.ofFloat(start, 0f);
+        settleAnimator = animator;
+        animator.setDuration(duration);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(animation -> {
+            if (settleAnimator != animation) return;
             dragOffsetX = (float) animation.getAnimatedValue();
             postInvalidateOnAnimation();
         });
-        settleAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (settleAnimator != animation) return;
                 dragOffsetX = 0f;
                 settleAnimator = null;
                 invalidate();
             }
         });
-        settleAnimator.start();
+        animator.start();
     }
 
-    private void finishVerticalGesture(MotionEvent event, float velocityY) {
+    private void finishVerticalGesture(float upX, float upY, float velocityY) {
         if (page == PAGE_APPS || page == PAGE_SETTINGS) {
             if (Math.abs(velocityY) >= minFlingVelocity) {
+                flingPage = page;
                 int current = page == PAGE_APPS
                         ? Math.round(appScroll)
                         : Math.round(settingsScroll);
@@ -1496,8 +1579,8 @@ final class LauncherSurface extends View {
 
         if (page != PAGE_HOME) return;
 
-        float dy = event.getY() - downY;
-        if (Math.abs(dy) <= Math.abs(event.getX() - downX)) return;
+        float dy = upY - downY;
+        if (Math.abs(dy) <= Math.abs(upX - downX)) return;
 
         if (dy < -gestureThresholdPx) {
             host.onQuickLaunchRequested();
@@ -1520,8 +1603,15 @@ final class LauncherSurface extends View {
 
     @Override public void computeScroll() {
         if (!scroller.computeScrollOffset()) return;
-        if (page == PAGE_SETTINGS) settingsScroll = scroller.getCurrY();
-        else appScroll = scroller.getCurrY();
+        if (flingPage != page || page == PAGE_HOME) {
+            scroller.abortAnimation();
+            return;
+        }
+        if (page == PAGE_SETTINGS) {
+            settingsScroll = clamp(scroller.getCurrY(), 0f, maxSettingsScroll());
+        } else {
+            appScroll = clamp(scroller.getCurrY(), 0f, maxAppScroll());
+        }
         postInvalidateOnAnimation();
     }
 
@@ -2154,22 +2244,27 @@ final class LauncherSurface extends View {
 
     private boolean performAccessibilityClick(int virtualId) {
         if (virtualId == A11Y_TIME) {
+            if (page != PAGE_HOME || !uiConfig.showTime) return false;
             host.onClockTapped();
             return true;
         }
         if (virtualId == A11Y_DATE) {
+            if (page != PAGE_HOME || !uiConfig.showDate) return false;
             host.onDateTapped();
             return true;
         }
         if (virtualId == A11Y_WEATHER) {
+            if (page != PAGE_HOME || !uiConfig.showWeather) return false;
             host.onWeatherTapped();
             return true;
         }
         if (virtualId == A11Y_BATTERY) {
+            if (page != PAGE_HOME || !uiConfig.showBattery) return false;
             host.onBatteryTapped();
             return true;
         }
         if (virtualId == A11Y_APPS_SEARCH) {
+            if (page != PAGE_APPS || searchActive) return false;
             host.onAppsSearchRequested();
             return true;
         }
@@ -2179,6 +2274,7 @@ final class LauncherSurface extends View {
         }
 
         if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            if (page != PAGE_HOME) return false;
             int index = virtualId - A11Y_HOME_BASE;
             if (index < 0 || index >= visibleHomeRowsCache) return false;
             AppEntry app = index < homeApps.size() ? homeApps.get(index) : null;
@@ -2201,6 +2297,7 @@ final class LauncherSurface extends View {
         }
 
         if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            if (page != PAGE_APPS) return false;
             int index = virtualId - A11Y_APP_BASE;
             if (searchActive) {
                 if (index < 0 || index >= searchResults.size()) return false;
@@ -2221,6 +2318,7 @@ final class LauncherSurface extends View {
         }
 
         if (virtualId >= A11Y_SETTINGS_BASE) {
+            if (page != PAGE_SETTINGS) return false;
             int index = virtualId - A11Y_SETTINGS_BASE;
             if (index < 0 || index >= SETTINGS_ROW_COUNT) return false;
             handleSettingsRow(index);
@@ -2231,6 +2329,7 @@ final class LauncherSurface extends View {
 
     private boolean performAccessibilityLongClick(int virtualId) {
         if (virtualId >= A11Y_HOME_BASE && virtualId < A11Y_APP_BASE) {
+            if (page != PAGE_HOME) return false;
             int index = virtualId - A11Y_HOME_BASE;
             if (!homeAccessibilityLongClickable(index)) return false;
             host.onHomeSlotLongPressed(index);
@@ -2238,6 +2337,7 @@ final class LauncherSurface extends View {
         }
 
         if (virtualId >= A11Y_APP_BASE && virtualId < A11Y_SETTINGS_BASE) {
+            if (page != PAGE_APPS) return false;
             int index = virtualId - A11Y_APP_BASE;
             AppEntry app = appAtVisibleIndex(index);
             if (app == null) return false;
@@ -2466,8 +2566,17 @@ final class LauncherSurface extends View {
     @Override protected void onDetachedFromWindow() {
         cancelPendingLongPress();
         cancelPageAnimator();
-        if (settleAnimator != null) settleAnimator.cancel();
+        cancelSettleAnimator(true);
+        if (!scroller.isFinished()) scroller.abortAnimation();
         recycleVelocityTracker();
+        alphabetScrubbing = false;
+        alphabetActiveIndex = -1;
+        appsSearchPullTriggered = false;
+        appsBrowseAtTopOnDown = false;
+        longPressTriggered = false;
+        gestureMode = GESTURE_NONE;
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
+        resetAccessibilityFocusState();
         super.onDetachedFromWindow();
     }
 

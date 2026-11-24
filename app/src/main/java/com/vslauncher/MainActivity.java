@@ -98,7 +98,11 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     private int bottomInset;
     private int maxHomeApps = 5;
     private boolean packageReceiverRegistered;
+    private boolean activityResumed;
     private boolean appsBrowseMode;
+    private Runnable pendingSearchOpen;
+    private Runnable pendingShowKeyboard;
+    private Runnable pendingProfileReload;
     private Runnable pendingSingleResultLaunch;
     private long searchEditGeneration;
     private String autoLaunchCandidateKey = "";
@@ -184,6 +188,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override protected void onResume() {
         super.onResume();
+        activityResumed = true;
         applyMinimalSystemUi();
         registerBattery();
         mainHandler.removeCallbacks(clockTick);
@@ -198,11 +203,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override protected void onPause() {
         super.onPause();
+        activityResumed = false;
+        cancelPendingSearchOpen();
+        cancelPendingShowKeyboard();
+        resetSingleResultLaunchState();
         mainHandler.removeCallbacks(clockTick);
         unregisterBattery();
     }
 
     @Override protected void onDestroy() {
+        activityResumed = false;
+        cancelPendingSearchOpen();
+        cancelPendingShowKeyboard();
+        cancelPendingProfileReload();
         clearUndo();
         removeSearch();
         unregisterPackageChanges();
@@ -213,7 +226,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onBackPressed() {
         if (surface.getPage() == LauncherSurface.PAGE_APPS) {
-            if (search != null) {
+            if (search != null || pendingSearchOpen != null) {
                 enterAppsBrowseMode();
             } else {
                 showPage(LauncherSurface.PAGE_HOME);
@@ -570,6 +583,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void showPage(int target, boolean focusSearch) {
+        cancelPendingSearchOpen();
         if (target != LauncherSurface.PAGE_APPS) appsBrowseMode = false;
         if (surface.getPage() == target) {
             if (target == LauncherSurface.PAGE_APPS && focusSearch) {
@@ -580,7 +594,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         }
 
         removeSearch();
-        if (target == LauncherSurface.PAGE_APPS && focusSearch) {
+        if (target == LauncherSurface.PAGE_APPS) {
             appsBrowseMode = false;
             surface.setSearchActive(true);
         }
@@ -590,14 +604,38 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
             long delay = uiConfig.pageDurationMs() == 0L
                     ? 0L
                     : uiConfig.pageDurationMs() + 20L;
-            mainHandler.postDelayed(() -> {
-                if (surface.getPage() == LauncherSurface.PAGE_APPS
+            Runnable openTask = () -> {
+                pendingSearchOpen = null;
+                if (activityResumed
+                        && !isFinishing()
+                        && !isDestroyed()
+                        && surface.getPage() == LauncherSurface.PAGE_APPS
                         && search == null
                         && !appsBrowseMode) {
                     addSearch(focusSearch);
                 }
-            }, delay);
+            };
+            pendingSearchOpen = openTask;
+            mainHandler.postDelayed(openTask, delay);
         }
+    }
+
+    private void cancelPendingSearchOpen() {
+        if (pendingSearchOpen == null) return;
+        mainHandler.removeCallbacks(pendingSearchOpen);
+        pendingSearchOpen = null;
+    }
+
+    private void cancelPendingShowKeyboard() {
+        if (pendingShowKeyboard == null) return;
+        mainHandler.removeCallbacks(pendingShowKeyboard);
+        pendingShowKeyboard = null;
+    }
+
+    private void cancelPendingProfileReload() {
+        if (pendingProfileReload == null) return;
+        mainHandler.removeCallbacks(pendingProfileReload);
+        pendingProfileReload = null;
     }
 
     private void addSearch(boolean focus) {
@@ -648,12 +686,14 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
                 // Composing spans are authoritative after the edit has been
                 // applied, so never arm singleton launch from an unfinished
                 // IME composition.
+                boolean composing = isImeComposing(s);
+                if (composing) searchImeLanguageTag = currentImeLanguageTag();
                 scheduleSingleResultLaunch(
                         query,
                         normalizedQuery,
                         searchResults,
                         SearchAutoLaunchPolicy.shouldBlockImeComposition(
-                                isImeComposing(s),
+                                composing,
                                 searchImeLanguageTag
                         )
                 );
@@ -679,15 +719,19 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void focusSearchField() {
         if (search == null) return;
+        cancelPendingShowKeyboard();
         search.requestFocus();
-        search.postDelayed(() -> {
-            if (search == null || !search.hasFocus()) return;
+        Runnable showTask = () -> {
+            pendingShowKeyboard = null;
+            if (!activityResumed || search == null || !search.hasFocus()) return;
             InputMethodManager keyboard =
                     (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
             if (keyboard != null) {
                 keyboard.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
             }
-        }, 80L);
+        };
+        pendingShowKeyboard = showTask;
+        mainHandler.postDelayed(showTask, 80L);
     }
 
     private FrameLayout.LayoutParams searchLayoutParams() {
@@ -706,6 +750,8 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
     }
 
     private void removeSearch() {
+        cancelPendingSearchOpen();
+        cancelPendingShowKeyboard();
         resetSingleResultLaunchState();
         if (search == null) {
             query = "";
@@ -1021,15 +1067,21 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         autoLaunchCandidateKey = candidateKey;
         pendingSingleResultLaunch = () -> {
             pendingSingleResultLaunch = null;
-            if (search == null
+            if (!activityResumed
+                    || !hasWindowFocus()
+                    || search == null
                     || surface.getPage() != LauncherSurface.PAGE_APPS
                     || generation != searchEditGeneration
                     || !currentRawQuery.equals(query)
-                    || !currentNormalizedQuery.equals(normalizedQuery)
-                    || SearchAutoLaunchPolicy.shouldBlockImeComposition(
-                            isImeComposing(search.getText()),
-                            searchImeLanguageTag
-                    )) {
+                    || !currentNormalizedQuery.equals(normalizedQuery)) {
+                return;
+            }
+            boolean composing = isImeComposing(search.getText());
+            if (composing) searchImeLanguageTag = currentImeLanguageTag();
+            if (SearchAutoLaunchPolicy.shouldBlockImeComposition(
+                    composing,
+                    searchImeLanguageTag
+            )) {
                 return;
             }
 
@@ -1119,10 +1171,12 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onAllAppsLongPressed(AppEntry app) {
         if (app == null) return;
+        resetSingleResultLaunchState();
         appRepository.loadShortcuts(app, shortcuts -> showAppActions(app, shortcuts));
     }
 
     private void showAppActions(AppEntry app, List<ShortcutInfo> shortcuts) {
+        if (isFinishing() || isDestroyed()) return;
         ArrayList<String> actions = new ArrayList<>();
         ArrayList<ShortcutInfo> shortcutActions = new ArrayList<>();
 
@@ -1191,7 +1245,13 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
         if (profile == null) return;
 
         appRepository.requestQuietMode(!profile.quiet, profile.user);
-        mainHandler.postDelayed(this::reloadApps, 500L);
+        cancelPendingProfileReload();
+        Runnable reloadTask = () -> {
+            pendingProfileReload = null;
+            reloadApps();
+        };
+        pendingProfileReload = reloadTask;
+        mainHandler.postDelayed(reloadTask, 500L);
     }
 
     private LauncherProfile findProfile(int kind, long serial) {
@@ -1364,6 +1424,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     @Override public void onAppsSearchRequested() {
         if (surface.getPage() != LauncherSurface.PAGE_APPS) return;
+        cancelPendingSearchOpen();
         appsBrowseMode = false;
         if (search == null) addSearch(true);
         else focusSearchField();
@@ -1371,6 +1432,7 @@ public final class MainActivity extends Activity implements LauncherSurface.Host
 
     private void enterAppsBrowseMode() {
         appsBrowseMode = true;
+        cancelPendingSearchOpen();
         removeSearch();
     }
 

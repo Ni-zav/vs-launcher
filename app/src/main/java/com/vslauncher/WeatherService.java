@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class WeatherService {
     interface Callback {
@@ -38,6 +40,10 @@ final class WeatherService {
     private final Activity activity;
     private final Callback callback;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final AtomicInteger requestGeneration = new AtomicInteger();
+    private volatile boolean closed;
+    private LocationManager activeLocationManager;
+    private LocationListener activeLocationListener;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "vs-weather");
         t.setPriority(Thread.NORM_PRIORITY - 1);
@@ -55,6 +61,7 @@ final class WeatherService {
     }
 
     void publishCacheAndRefresh() {
+        if (closed) return;
         WeatherSnapshot cached = readCache();
         if (cached != null) callback.onWeather(cached.displayText());
 
@@ -65,7 +72,9 @@ final class WeatherService {
     }
 
     void refreshNow() {
+        if (closed) return;
         if (!hasLocationPermission()) {
+            cancelPendingLocation();
             callback.onWeather("Tap for weather");
             return;
         }
@@ -73,6 +82,9 @@ final class WeatherService {
     }
 
     private void findLocationAndFetch() {
+        if (closed) return;
+        cancelPendingLocation();
+
         LocationManager manager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
         if (manager == null) {
             callback.onWeather("Weather unavailable");
@@ -104,21 +116,42 @@ final class WeatherService {
                 return;
             }
 
-            manager.requestSingleUpdate(provider, new LocationListener() {
+            LocationListener listener = new LocationListener() {
                 @Override public void onLocationChanged(Location location) {
-                    fetch(location);
+                    if (activeLocationListener != this) return;
+                    cancelPendingLocation();
+                    if (!closed) fetch(location);
                 }
 
                 @Override public void onProviderDisabled(String provider) {
-                    callback.onWeather("Location off");
+                    if (activeLocationListener != this) return;
+                    cancelPendingLocation();
+                    if (!closed) callback.onWeather("Location off");
                 }
 
                 @Override public void onProviderEnabled(String provider) { }
 
                 @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
-            }, Looper.getMainLooper());
+            };
+            activeLocationManager = manager;
+            activeLocationListener = listener;
+            manager.requestSingleUpdate(provider, listener, Looper.getMainLooper());
         } catch (SecurityException | IllegalArgumentException error) {
+            cancelPendingLocation();
             callback.onWeather("Weather unavailable");
+        }
+    }
+
+    private void cancelPendingLocation() {
+        LocationManager manager = activeLocationManager;
+        LocationListener listener = activeLocationListener;
+        activeLocationManager = null;
+        activeLocationListener = null;
+        if (manager != null && listener != null) {
+            try {
+                manager.removeUpdates(listener);
+            } catch (SecurityException | IllegalArgumentException ignored) {
+            }
         }
     }
 
@@ -129,61 +162,76 @@ final class WeatherService {
     }
 
     private void fetch(Location location) {
+        if (closed || location == null || executor.isShutdown()) return;
+        final int generation = requestGeneration.incrementAndGet();
         final double latitude = Math.round(location.getLatitude() * 100.0) / 100.0;
         final double longitude = Math.round(location.getLongitude() * 100.0) / 100.0;
 
-        executor.execute(() -> {
-            HttpURLConnection connection = null;
-            try {
-                String endpoint = String.format(
-                        Locale.US,
-                        "https://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&timezone=auto",
-                        latitude,
-                        longitude
-                );
-                connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection.setConnectTimeout(4_000);
-                connection.setReadTimeout(4_000);
-                connection.setRequestProperty("Accept", "application/json");
-                connection.setRequestProperty("User-Agent", "VS-Launcher/0.9.1");
+        try {
+            executor.execute(() -> {
+                if (closed || generation != requestGeneration.get()) return;
+                HttpURLConnection connection = null;
+                try {
+                    String endpoint = String.format(
+                            Locale.US,
+                            "https://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&timezone=auto",
+                            latitude,
+                            longitude
+                    );
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setConnectTimeout(4_000);
+                    connection.setReadTimeout(4_000);
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("User-Agent", "VS-Launcher/0.9.1");
 
-                int status = connection.getResponseCode();
-                if (status < 200 || status >= 300) {
-                    throw new IllegalStateException("HTTP " + status);
+                    int status = connection.getResponseCode();
+                    if (status < 200 || status >= 300) {
+                        throw new IllegalStateException("HTTP " + status);
+                    }
+
+                    byte[] bytes;
+                    try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
+                         ByteArrayOutputStream output = new ByteArrayOutputStream(1024)) {
+                        byte[] buffer = new byte[1024];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                        bytes = output.toByteArray();
+                    }
+
+                    if (closed || generation != requestGeneration.get()) return;
+
+                    JSONObject current = new JSONObject(new String(bytes, StandardCharsets.UTF_8))
+                            .getJSONObject("current");
+                    double temperature = current.getDouble("temperature_2m");
+                    int code = current.getInt("weather_code");
+                    long now = System.currentTimeMillis();
+
+                    activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                            .edit()
+                            .putLong(KEY_TIME, now)
+                            .putFloat(KEY_TEMP, (float) temperature)
+                            .putInt(KEY_CODE, code)
+                            .apply();
+
+                    WeatherSnapshot snapshot = new WeatherSnapshot(now, temperature, code);
+                    main.post(() -> {
+                        if (closed || generation != requestGeneration.get()) return;
+                        callback.onWeather(snapshot.displayText());
+                    });
+                } catch (Exception error) {
+                    if (closed || generation != requestGeneration.get()) return;
+                    WeatherSnapshot cached = readCache();
+                    String fallback = cached == null ? "Weather unavailable" : cached.displayText();
+                    main.post(() -> {
+                        if (closed || generation != requestGeneration.get()) return;
+                        callback.onWeather(fallback);
+                    });
+                } finally {
+                    if (connection != null) connection.disconnect();
                 }
-
-                byte[] bytes;
-                try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
-                     ByteArrayOutputStream output = new ByteArrayOutputStream(1024)) {
-                    byte[] buffer = new byte[1024];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                    bytes = output.toByteArray();
-                }
-
-                JSONObject current = new JSONObject(new String(bytes, StandardCharsets.UTF_8))
-                        .getJSONObject("current");
-                double temperature = current.getDouble("temperature_2m");
-                int code = current.getInt("weather_code");
-                long now = System.currentTimeMillis();
-
-                activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                        .edit()
-                        .putLong(KEY_TIME, now)
-                        .putFloat(KEY_TEMP, (float) temperature)
-                        .putInt(KEY_CODE, code)
-                        .apply();
-
-                WeatherSnapshot snapshot = new WeatherSnapshot(now, temperature, code);
-                main.post(() -> callback.onWeather(snapshot.displayText()));
-            } catch (Exception error) {
-                WeatherSnapshot cached = readCache();
-                String fallback = cached == null ? "Weather unavailable" : cached.displayText();
-                main.post(() -> callback.onWeather(fallback));
-            } finally {
-                if (connection != null) connection.disconnect();
-            }
-        });
+            });
+        } catch (RejectedExecutionException ignored) {
+        }
     }
 
     private WeatherSnapshot readCache() {
@@ -198,6 +246,10 @@ final class WeatherService {
     }
 
     void close() {
+        closed = true;
+        requestGeneration.incrementAndGet();
+        cancelPendingLocation();
+        main.removeCallbacksAndMessages(null);
         executor.shutdownNow();
     }
 

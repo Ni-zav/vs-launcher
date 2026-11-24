@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 
 final class AppRepository {
     interface Callback {
@@ -34,6 +36,8 @@ final class AppRepository {
     private final LauncherApps launcherApps;
     private final UserManager userManager;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final AtomicLong loadGeneration = new AtomicLong();
+    private volatile boolean closed;
     private Runnable changeCallback;
     private boolean launcherCallbackRegistered;
     private final LauncherApps.Callback launcherCallback = new LauncherApps.Callback() {
@@ -89,64 +93,75 @@ final class AppRepository {
     }
 
     void load(Callback callback) {
-        executor.execute(() -> {
-            ArrayList<AppEntry> result = new ArrayList<>();
-            ArrayList<LauncherProfile> profiles = new ArrayList<>();
-            if (launcherApps != null && userManager != null) {
-                try {
-                    for (UserHandle user : launcherApps.getProfiles()) {
-                        int kind = profileKind(user);
-                        long serial = userManager.getSerialNumberForUser(user);
-                        boolean quiet = kind != AppEntry.PROFILE_PERSONAL && quietMode(user);
-                        profiles.add(new LauncherProfile(user, serial, kind, quiet));
+        if (closed || executor.isShutdown()) return;
+        final long generation = loadGeneration.incrementAndGet();
+        try {
+            executor.execute(() -> {
+                if (closed || generation != loadGeneration.get()) return;
+                ArrayList<AppEntry> result = new ArrayList<>();
+                ArrayList<LauncherProfile> profiles = new ArrayList<>();
+                if (launcherApps != null && userManager != null) {
+                    try {
+                        for (UserHandle user : launcherApps.getProfiles()) {
+                            int kind = profileKind(user);
+                            long serial = userManager.getSerialNumberForUser(user);
+                            boolean quiet = kind != AppEntry.PROFILE_PERSONAL && quietMode(user);
+                            profiles.add(new LauncherProfile(user, serial, kind, quiet));
 
-                        // Quiet work/private profiles expose the container but never apps/search.
-                        if (quiet) continue;
+                            // Quiet work/private profiles expose the container but never apps/search.
+                            if (quiet) continue;
 
-                        List<LauncherActivityInfo> activities;
-                        try {
-                            activities = launcherApps.getActivityList(null, user);
-                        } catch (IllegalStateException | SecurityException error) {
-                            continue;
-                        }
-
-                        for (LauncherActivityInfo info : activities) {
-                            if (info == null
-                                    || context.getPackageName().equals(
-                                    info.getComponentName().getPackageName())) {
+                            List<LauncherActivityInfo> activities;
+                            try {
+                                activities = launcherApps.getActivityList(null, user);
+                            } catch (IllegalStateException | SecurityException error) {
                                 continue;
                             }
 
-                            CharSequence loadedLabel = info.getLabel();
-                            String label = loadedLabel == null
-                                    ? info.getComponentName().getPackageName()
-                                    : loadedLabel.toString().trim();
-                            if (label.isEmpty()) {
-                                label = info.getComponentName().getPackageName();
+                            for (LauncherActivityInfo info : activities) {
+                                if (info == null
+                                        || context.getPackageName().equals(
+                                        info.getComponentName().getPackageName())) {
+                                    continue;
+                                }
+
+                                CharSequence loadedLabel = info.getLabel();
+                                String label = loadedLabel == null
+                                        ? info.getComponentName().getPackageName()
+                                        : loadedLabel.toString().trim();
+                                if (label.isEmpty()) {
+                                    label = info.getComponentName().getPackageName();
+                                }
+
+                                result.add(new AppEntry(
+                                        label,
+                                        info.getComponentName(),
+                                        user,
+                                        serial,
+                                        kind
+                                ));
                             }
-
-                            result.add(new AppEntry(
-                                    label,
-                                    info.getComponentName(),
-                                    user,
-                                    serial,
-                                    kind
-                            ));
                         }
+                    } catch (IllegalStateException | SecurityException ignored) {
                     }
-                } catch (IllegalStateException | SecurityException ignored) {
                 }
-            }
 
-            result.sort(Comparator
-                    .comparingInt((AppEntry app) -> app.profileKind)
-                    .thenComparing(app -> app.normalizedLabel)
-                    .thenComparing(app -> app.component.getPackageName()));
+                if (closed || generation != loadGeneration.get()) return;
 
-            List<AppEntry> immutable = Collections.unmodifiableList(result);
-            List<LauncherProfile> immutableProfiles = Collections.unmodifiableList(profiles);
-            main.post(() -> callback.onLoaded(immutable, immutableProfiles));
-        });
+                result.sort(Comparator
+                        .comparingInt((AppEntry app) -> app.profileKind)
+                        .thenComparing(app -> app.normalizedLabel)
+                        .thenComparing(app -> app.component.getPackageName()));
+
+                List<AppEntry> immutable = Collections.unmodifiableList(result);
+                List<LauncherProfile> immutableProfiles = Collections.unmodifiableList(profiles);
+                main.post(() -> {
+                    if (closed || generation != loadGeneration.get()) return;
+                    callback.onLoaded(immutable, immutableProfiles);
+                });
+            });
+        } catch (RejectedExecutionException ignored) {
+        }
     }
 
     private boolean quietMode(UserHandle user) {
@@ -203,34 +218,43 @@ final class AppRepository {
     }
 
     void loadShortcuts(AppEntry app, ShortcutsCallback callback) {
+        if (closed) return;
         if (app == null || launcherApps == null || !canUseShortcuts()) {
             callback.onLoaded(Collections.emptyList());
             return;
         }
+        if (executor.isShutdown()) return;
 
-        executor.execute(() -> {
-            List<ShortcutInfo> shortcuts;
-            try {
-                LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery()
-                        .setPackage(app.component.getPackageName())
-                        .setQueryFlags(
-                                LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
-                                        | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
-                                        | LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
-                        );
-                shortcuts = launcherApps.getShortcuts(query, app.user);
-                if (shortcuts == null) shortcuts = Collections.emptyList();
-            } catch (IllegalStateException | SecurityException error) {
-                shortcuts = Collections.emptyList();
-            }
+        try {
+            executor.execute(() -> {
+                if (closed) return;
+                List<ShortcutInfo> shortcuts;
+                try {
+                    LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery()
+                            .setPackage(app.component.getPackageName())
+                            .setQueryFlags(
+                                    LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
+                                            | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                                            | LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
+                            );
+                    shortcuts = launcherApps.getShortcuts(query, app.user);
+                    if (shortcuts == null) shortcuts = Collections.emptyList();
+                } catch (IllegalStateException | SecurityException error) {
+                    shortcuts = Collections.emptyList();
+                }
 
-            ArrayList<ShortcutInfo> visible = new ArrayList<>(shortcuts.size());
-            for (ShortcutInfo shortcut : shortcuts) {
-                if (shortcut != null && shortcut.isEnabled()) visible.add(shortcut);
-            }
-            List<ShortcutInfo> immutable = Collections.unmodifiableList(visible);
-            main.post(() -> callback.onLoaded(immutable));
-        });
+                ArrayList<ShortcutInfo> visible = new ArrayList<>(shortcuts.size());
+                for (ShortcutInfo shortcut : shortcuts) {
+                    if (shortcut != null && shortcut.isEnabled()) visible.add(shortcut);
+                }
+                List<ShortcutInfo> immutable = Collections.unmodifiableList(visible);
+                main.post(() -> {
+                    if (closed) return;
+                    callback.onLoaded(immutable);
+                });
+            });
+        } catch (RejectedExecutionException ignored) {
+        }
     }
 
     boolean startShortcut(AppEntry app, ShortcutInfo shortcut) {
@@ -347,6 +371,9 @@ final class AppRepository {
     }
 
     void close() {
+        closed = true;
+        loadGeneration.incrementAndGet();
+        main.removeCallbacksAndMessages(null);
         if (launcherApps != null && launcherCallbackRegistered) {
             launcherApps.unregisterCallback(launcherCallback);
             launcherCallbackRegistered = false;
