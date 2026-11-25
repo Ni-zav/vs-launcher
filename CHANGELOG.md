@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 — 2026-11-25
+
+- Added local unit conversions such as `10km to mi` and a flashlight search command on supported devices.
+- Added a configurable swipe-down gesture for Search or Notifications and improved swipe transitions, predictive Back where supported, and keyboard motion.
+- Search now emphasizes matching text, uses recent launches to break ranking ties, and shows progress before a single app opens automatically.
+- Restored the Android uninstall confirmation for supported personal-profile apps.
+- Hardened app discovery and weather updates, and moved configuration file I/O off the UI thread.
+- Added Android 14 screenshots and a captioned walkthrough.
+
+[Release notes and upgrade instructions](docs/releases/0.10.0.md)
+
 ## 0.9.1 — 2026-09-20
 
 ### Search and clock reliability
